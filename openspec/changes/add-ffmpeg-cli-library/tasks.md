@@ -1,8 +1,8 @@
 ## 1. 项目脚手架
 
-- [ ] 1.1 建立 Maven 项目，单模块 `ffmpeg4j-core`（groupId/artifactId、Java 版本、无重型依赖）
+- [x] 1.1 建立 Maven 项目，单模块 `ffmpeg4j-core`（groupId/artifactId、Java 版本、无重型依赖）
 - [ ] 1.2 选定并接入轻量 JSON 解析（极轻第三方依赖 minimal-json/org.json 或自研微型解析器；JDK 无受支持 JSON API），确认 core 不引入 Jackson
-- [ ] 1.3 配置测试框架（JUnit）与 CI 骨架
+- [x] 1.3 配置测试框架（JUnit）与 CI 骨架
 - [ ] 1.4 在 README/常量中声明最低支持的 ffmpeg 版本 = **4.2**（支持/测试下限；真实特性 floor ~2.3，低于 4.2 仅警告不硬失败），并探测 `--enable-libass`/`--enable-libfreetype` 构建开关
 
 ## 2. L0 环境层
@@ -14,26 +14,26 @@
 
 ## 3. L2 图数据结构与编译器
 
-- [ ] 3.1 定义内部 `FilterGraph` 数据结构（节点=滤镜，边=带类型 pad）
-- [ ] 3.2 从 `Stream` 引用图构建 DAG，记录每条 pad 的消费边
-- [ ] 3.3 引用计数扇出侦测 + 自动插入 `split`/`asplit` 并重连
-- [ ] 3.4 共享子链去重
-- [ ] 3.5 拓扑排序 + 分配内部 pad 名
-- [ ] 3.6 编译期校验：悬空 pad、媒体类型不匹配，抛描述性错误
-- [ ] 3.7 生成 argv：`-i` 输入、`-filter_complex`、`-map`、codec/输出参数
+- [x] 3.1 定义内部 `FilterGraph` 数据结构（节点=滤镜，边=带类型 pad）
+- [x] 3.2 从 `Stream` 引用图构建 DAG，记录每条 pad 的消费边
+- [x] 3.3 引用计数扇出侦测 + 自动插入 `split`/`asplit` 并重连
+- [x] 3.4 共享子链去重
+- [x] 3.5 拓扑排序 + 分配内部 pad 名
+- [x] 3.6 编译期校验：悬空 pad、媒体类型不匹配，抛描述性错误
+- [x] 3.7 生成 argv：`-i` 输入、`-filter_complex`、`-map`、codec/输出参数
 - [ ] 3.8 汇聚归一化：音频 `aresample`/`aformat` 编译器内部推导共同目标；视频 `scale`/`setsar`/`fps`/`format` 按门面/调用方给定目标接线（MUST 含 setsar）；流集合异构（缺音/视轨段）注入 anullsrc/占位或可诊断拒绝
-- [ ] 3.9 filtergraph 转义器：drawText 文本与字幕/字体路径（冒号/百分号/引号/反斜杠、Windows 盘符冒号），或 `textfile=` 旁路；含空格/中文/盘符冒号路径的回归测试
-- [ ] 3.10 去重按引用标识（不合并结构相等的独立链）；SUBTITLE 流进 filtergraph 且扇出→编译期报错
-- [ ] 3.11 单元测试：直链、二次扇出、菱形图、多输出去重、汇聚归一化（含 setsar）、转义、非法图——断言产出的 argv
+- [x] 3.9 filtergraph 转义器：drawText 文本与字幕/字体路径（冒号/百分号/引号/反斜杠、Windows 盘符冒号），或 `textfile=` 旁路；含空格/中文/盘符冒号路径的回归测试
+- [x] 3.10 去重按引用标识（不合并结构相等的独立链）；SUBTITLE 流进 filtergraph 且扇出→编译期报错
+- [x] 3.11 单元测试：直链、二次扇出、菱形图、多输出去重、汇聚归一化（含 setsar）、转义、非法图——断言产出的 argv
 
 ## 4. L3 编排模型
 
-- [ ] 4.1 定义不可变 `Stream`（携带 `mediaType: VIDEO|AUDIO|SUBTITLE`）与 `Input`/`Output`
-- [ ] 4.2 滤镜为纯函数 `Stream → Stream` 的骨架，接入 L2 图
-- [ ] 4.3 实现前 15 个 curated 滤镜（第 16 个字幕烧录族见 4.4）——视频 9（scale/crop/pad/overlay/trim/fps/format/fade/drawText）、音频 5（volume/amix/atrim/atempo/afade）、双型 concat；命名统一 Java 驼峰（drawText→ffmpeg drawtext）；trim/atrim 自动补 setpts/asetpts，atempo >2.0 自动拆链（单实例范围 [0.5,100]）
-- [ ] 4.4 `burnSubtitles(File)`（subtitles=）与 `burnAss(File)`（ass=，无 force_style）：字幕源建模为文件参数而非 pad
+- [x] 4.1 定义不可变 `Stream`（携带 `mediaType: VIDEO|AUDIO|SUBTITLE`）与 `Input`/`Output`
+- [x] 4.2 滤镜为纯函数 `Stream → Stream` 的骨架，接入 L2 图
+- [x] 4.3 实现前 15 个 curated 滤镜（第 16 个字幕烧录族见 4.4）——视频 9（scale/crop/pad/overlay/trim/fps/format/fade/drawText）、音频 5（volume/amix/atrim/atempo/afade）、双型 concat；命名统一 Java 驼峰（drawText→ffmpeg drawtext）；trim/atrim 自动补 setpts/asetpts，atempo >2.0 自动拆链（单实例范围 [0.5,100]）
+- [x] 4.4 `burnSubtitles(File)`（subtitles=）与 `burnAss(File)`（ass=，无 force_style）：字幕源建模为文件参数而非 pad
 - [ ] 4.5 软字幕流操作：mux/透传/抽取、srt↔vtt↔ass 转换（`-map` + `-c:s`）
-- [ ] 4.6 逃生舱 `rawFilter(String)` 与 `rawArg(...)`
+- [x] 4.6 逃生舱 `rawFilter(String)` 与 `rawArg(...)`（位置感知：Input.withInputArgs / Output.withArgs）
 - [ ] 4.7 单元测试：不可变性、类型校验拒绝、扇出值语义、字幕路径
 
 ## 5. L1 执行引擎
