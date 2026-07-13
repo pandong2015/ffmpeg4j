@@ -48,11 +48,11 @@
 
 ## 7. 测试：切片装配 + 冒烟
 
-- [ ] 7.1 `Ffmpeg4jAutoConfigurationTest`：用 `ApplicationContextRunner` 断言默认装配出 `FfmpegEnvironment`/`FfmpegExecutor`/`FfmpegClient` 三 bean 且类型正确
-- [ ] 7.2 覆盖与条件测试：用户自定义同名 bean 时 `@ConditionalOnMissingBean` 让用户 bean 胜出；`ffmpeg-path`/`ffprobe-path` 显式属性优先于 PATH 发现（用 `withPropertyValues` 注入）
-- [ ] 7.3 fail-fast 测试：`fail-fast=true` + 指向不存在二进制→context 启动失败并抛可诊断异常；`fail-fast=false`→启动放行不硬失败
-- [ ] 7.4 observability 切片：无 actuator/micrometer classpath 时相关 bean 不装配；有则 `FfmpegHealthIndicator`/`FfmpegInfoContributor`/`FfmpegMetrics` 就位
-- [ ] 7.5 `@SpringBootTest` 冒烟：真实调一次 transcode/probe，真机 ffmpeg 用 `assumeTrue(commandExists("ffmpeg"), ...)` 守卫（缺失即跳过而非失败）
+- [x] 7.1 `Ffmpeg4jAutoConfigurationTest`：用 `ApplicationContextRunner` 断言默认装配出 `FfmpegEnvironment`/`FfmpegExecutor`/`FfmpegClient` 三 bean 且类型正确
+- [x] 7.2 覆盖与条件测试：用户自定义同名 bean 时 `@ConditionalOnMissingBean` 让用户 bean 胜出；`ffmpeg-path`/`ffprobe-path` 显式属性优先于 PATH 发现（用 `withPropertyValues` 注入）
+- [x] 7.3 fail-fast 测试：`fail-fast=true` + 指向不存在二进制→context 启动失败并抛可诊断异常；`fail-fast=false`→启动放行不硬失败
+- [x] 7.4 observability 切片：无 actuator/micrometer classpath 时相关 bean 不装配；有则 `FfmpegHealthIndicator`/`FfmpegInfoContributor`/`FfmpegMetrics` 就位
+- [x] 7.5 `@SpringBootTest` 冒烟：真实调一次 transcode/probe，真机 ffmpeg 用 `assumeTrue(commandExists("ffmpeg"), ...)` 守卫（缺失即跳过而非失败）
 
 ## 8. 收尾
 
