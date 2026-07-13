@@ -66,13 +66,23 @@ public class Ffmpeg4jAutoConfiguration {
                                      Ffmpeg4jProperties properties,
                                      ObjectProvider<TaskExecutor> taskExecutors,
                                      FfmpegProgressBridge progressBridge) {
+        ClientWiring wiring = resolveWiring(properties, taskExecutors, progressBridge);
+        return new FfmpegClient(ffmpegEnvironment, wiring.runOptions(), wiring.asyncExecutor());
+    }
+
+    /**
+     * 解析门面执行的运行选项与异步执行器：当 {@code use-spring-executor=true} 且存在唯一 Spring
+     * {@link TaskExecutor} 时，把它设为 core 回调派发器（进度回调移出 pump 线程）与异步门面执行器，并挂载进度
+     * 桥接为 {@code onProgress}；否则回退 core 默认（不硬失败）。供基础与带指标的门面 bean 复用。
+     */
+    static ClientWiring resolveWiring(Ffmpeg4jProperties properties,
+                                      ObjectProvider<TaskExecutor> taskExecutors,
+                                      FfmpegProgressBridge progressBridge) {
         RunOptions runOptions = buildDefaultRunOptions(properties);
         Executor asyncExecutor = null;
         if (properties.getAsync().isUseSpringExecutor()) {
             TaskExecutor taskExecutor = taskExecutors.getIfUnique();
             if (taskExecutor != null) {
-                // TaskExecutor is-a java.util.concurrent.Executor：既作 core 回调派发器，也作异步门面执行器。
-                // 进度回调因此在 executor 线程触发，进而 publishEvent/listener 不占进度 pump 线程（呼应 core 铁律）。
                 asyncExecutor = taskExecutor;
                 runOptions = runOptions
                         .callbackExecutor(taskExecutor)
@@ -82,7 +92,11 @@ public class Ffmpeg4jAutoConfiguration {
                         + "进度事件桥接暂关闭；如需事件请提供一个（@Primary）TaskExecutor bean。");
             }
         }
-        return new FfmpegClient(ffmpegEnvironment, runOptions, asyncExecutor);
+        return new ClientWiring(runOptions, asyncExecutor);
+    }
+
+    /** 门面 bean 的接线结果：合并后的默认 {@link RunOptions} 与异步执行器（可为 {@code null}）。 */
+    record ClientWiring(RunOptions runOptions, Executor asyncExecutor) {
     }
 
     @Bean

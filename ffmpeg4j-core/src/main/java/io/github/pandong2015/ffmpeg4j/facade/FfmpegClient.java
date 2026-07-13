@@ -42,8 +42,11 @@ import io.github.pandong2015.ffmpeg4j.probe.ProbeResult;
  * {@link Executor}（默认 {@link ForkJoinPool#commonPool()}）上执行、不阻塞调用线程；失败以原始
  * {@link io.github.pandong2015.ffmpeg4j.FfmpegException} {@code completeExceptionally}；对返回句柄调用
  * {@link CompletableFuture#cancel(boolean) cancel} 会复用 core 的优雅取消阶梯（写 {@code q} → SIGTERM → SIGKILL）。
+ *
+ * <p><b>可扩展</b>：本类非 {@code final}，字段全 {@code final} 故子类无法破坏其不可变状态——留此接缝供
+ * 横切埋点（如 Spring starter 的 Micrometer 计时/计数装饰子类）覆盖门面方法。
  */
-public final class FfmpegClient {
+public class FfmpegClient {
 
     private final FfmpegEnvironment env;
     private final RunOptions defaultRunOptions;

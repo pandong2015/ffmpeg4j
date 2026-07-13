@@ -62,21 +62,9 @@
             <artifactId>spring-test</artifactId>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-actuator</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-actuator-autoconfigure</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-core</artifactId>
-            <scope>test</scope>
-        </dependency>
+        <!-- 注：actuator / actuator-autoconfigure / micrometer-core 已在上方以 optional=true 声明；
+             optional 主依赖同样在本模块自身的 test 类路径上，故此处无需（也不应）再以 test scope 重复声明——
+             重复声明会让 test scope 覆盖 optional，致其从主编译类路径消失。 -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>

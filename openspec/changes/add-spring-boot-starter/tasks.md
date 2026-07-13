@@ -34,11 +34,11 @@
 
 ## 5. observability：健康/信息/指标
 
-- [ ] 5.1 新增 `FfmpegHealthIndicator`（`@ConditionalOnClass(HealthIndicator.class)` + `@ConditionalOnEnabledHealthIndicator`）：二进制缺失 **或 libass/libfreetype 任一构建开关缺失** → `Status.DOWN`（details 指明缺失项）；版本 <4.2 仅告警仍 `UP`；探测只读无副作用
-- [ ] 5.2 新增 `FfmpegInfoContributor`（`@ConditionalOnClass(InfoContributor.class)`）：向 `/actuator/info` 贡献 ffmpeg 版本与构建开关（libass/libfreetype）
-- [ ] 5.3 新增 `FfmpegMetrics`（`@ConditionalOnClass(MeterRegistry.class)`）：门面调用计时（Timer，按门面名+结果打 tag）+ 失败计数按 `ErrorPattern` 分类打 tag + 运行中 ffmpeg 子进程数 `Gauge`（由引擎活跃计数驱动，成功/失败/取消三路径都正确回落，不泄漏虚高）
-- [ ] 5.4 新增 `FfmpegObservabilityAutoConfiguration`（`@AutoConfiguration(after=Ffmpeg4jAutoConfiguration.class)`）汇总上述三 bean，全部 classpath 条件装配（无 actuator/micrometer 时静默跳过）
-- [ ] 5.5 补 `AutoConfiguration.imports` 登记 `FfmpegObservabilityAutoConfiguration`
+- [x] 5.1 新增 `FfmpegHealthIndicator`（`@ConditionalOnClass(HealthIndicator.class)` + `@ConditionalOnEnabledHealthIndicator`）：二进制缺失 **或 libass/libfreetype 任一构建开关缺失** → `Status.DOWN`（details 指明缺失项）；版本 <4.2 仅告警仍 `UP`；探测只读无副作用
+- [x] 5.2 新增 `FfmpegInfoContributor`（`@ConditionalOnClass(InfoContributor.class)`）：向 `/actuator/info` 贡献 ffmpeg 版本与构建开关（libass/libfreetype）
+- [x] 5.3 新增 `FfmpegMetrics`（`@ConditionalOnClass(MeterRegistry.class)`）：门面调用计时（Timer，按门面名+结果打 tag）+ 失败计数按 `ErrorPattern` 分类打 tag + 运行中 ffmpeg 子进程数 `Gauge`（由引擎活跃计数驱动，成功/失败/取消三路径都正确回落，不泄漏虚高）
+- [x] 5.4 新增 `FfmpegObservabilityAutoConfiguration`（`@AutoConfiguration(after=Ffmpeg4jAutoConfiguration.class)`）汇总上述三 bean，全部 classpath 条件装配（无 actuator/micrometer 时静默跳过）
+- [x] 5.5 补 `AutoConfiguration.imports` 登记 `FfmpegObservabilityAutoConfiguration`
 
 ## 6. starter 聚合 POM
 
