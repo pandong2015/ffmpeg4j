@@ -310,7 +310,8 @@ for (StreamInfo s : p.subtitleStreams()) {
 mvn test          # 运行全部单元 + 集成测试
 ```
 
-集成/E2E 测试用 `-f lavfi` 现场生成素材，**缺 ffmpeg/ffprobe 或缺相应构建开关（如 libass）时以 `assumeTrue` 跳过而非失败**。
+- **运行时**：目标机需 JDK 17+（`maven.compiler.release=17`）。库本身在任意 ≥17 的 JDK（含 21/26）上均可编译、打包、运行。
+- 集成/E2E 测试用 `-f lavfi` 现场生成素材，**缺 ffmpeg/ffprobe 或缺相应构建开关（如 libass）时以 `assumeTrue` 跳过而非失败**。
 
 ### 覆盖率
 
@@ -321,6 +322,14 @@ open target/site/jacoco/index.html    # 或用浏览器打开该文件
 ```
 
 CSV 汇总见 `target/site/jacoco/jacoco.csv`。
+
+> ⚠️ **覆盖率报告需用 JDK 17 或 21 构建**。JaCoCo 0.8.12 无法插桩 JDK ≥ 23 的 class（会报 `Unsupported class file major version 70` 等），此时**测试照常全绿、jar 照常产出，仅覆盖率数据缺失**。若默认 JDK 较新，临时切换即可：
+>
+> ```bash
+> JAVA_HOME=$(/usr/libexec/java_home -v 21) mvn clean test   # macOS；Linux 换成对应 JDK21 路径
+> ```
+>
+> 当前基线（JDK 21）：**行覆盖 ~88%**，`compiler` 层最高（~97%）。
 
 ---
 
