@@ -25,12 +25,12 @@
 
 ## 4. async + 进度事件桥接
 
-- [ ] 4.1 新增 `FfmpegProgressEvent`（Spring `ApplicationEvent` 或 POJO + `ApplicationEventPublisher`）：承载进度 `key=value` 快照（帧/时间/码率/speed 等）
-- [ ] 4.2 `async.use-spring-executor=true` 时，把 core 的 `.callbackExecutor(...)` 逃生舱接到注入的 Spring `TaskExecutor`（`@ConditionalOnMissingBean` 提供默认 `ThreadPoolTaskExecutor`，允许用户覆盖）
-- [ ] 4.3 进度桥接铁律：进度回调**必经 TaskExecutor 派发**（`publishEvent` 在 executor 线程），**绝不阻塞/占用 pump 线程**，呼应 core「回调必须非阻塞」约束
-- [ ] 4.4 在 `FfmpegClient`/autoconfigure 暴露异步入口：基于 core `runAsync()` 返回 `CompletableFuture`，其回调经上面 executor 派发（响应式 WebFlux 明确不做）
-- [ ] 4.5 新增 `FfmpegProgressEventTest`：断言事件在 TaskExecutor 线程而非 pump 线程触发、`use-spring-executor=false` 时退回 core 默认行为
-- [ ] 4.6 新增 `FfmpegProgressListener` 函数式接口与进度递送双通道：`ffmpeg4j.async.progress-channel`（application-event 广播 / listener 直投 / both）切换，两通道均经 TaskExecutor 派发、绝不占 pump 线程；补测通道切换与 listener 直投路径
+- [x] 4.1 新增 `FfmpegProgressEvent`（Spring `ApplicationEvent` 或 POJO + `ApplicationEventPublisher`）：承载进度 `key=value` 快照（帧/时间/码率/speed 等）
+- [x] 4.2 `async.use-spring-executor=true` 时，把 core 的 `.callbackExecutor(...)` 逃生舱接到注入的 Spring `TaskExecutor`（`@ConditionalOnMissingBean` 提供默认 `ThreadPoolTaskExecutor`，允许用户覆盖）
+- [x] 4.3 进度桥接铁律：进度回调**必经 TaskExecutor 派发**（`publishEvent` 在 executor 线程），**绝不阻塞/占用 pump 线程**，呼应 core「回调必须非阻塞」约束
+- [x] 4.4 在 `FfmpegClient`/autoconfigure 暴露异步入口：基于 core `runAsync()` 返回 `CompletableFuture`，其回调经上面 executor 派发（响应式 WebFlux 明确不做）
+- [x] 4.5 新增 `FfmpegProgressEventTest`：断言事件在 TaskExecutor 线程而非 pump 线程触发、`use-spring-executor=false` 时退回 core 默认行为
+- [x] 4.6 新增 `FfmpegProgressListener` 函数式接口与进度递送双通道：`ffmpeg4j.async.progress-channel`（application-event 广播 / listener 直投 / both）切换，两通道均经 TaskExecutor 派发、绝不占 pump 线程；补测通道切换与 listener 直投路径
 
 ## 5. observability：健康/信息/指标
 

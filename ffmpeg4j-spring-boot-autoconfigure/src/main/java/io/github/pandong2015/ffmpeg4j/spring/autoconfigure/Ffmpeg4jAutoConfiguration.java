@@ -1,14 +1,18 @@
 package io.github.pandong2015.ffmpeg4j.spring.autoconfigure;
 
 import java.nio.file.Path;
+import java.util.concurrent.Executor;
+import java.util.logging.Logger;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.core.task.TaskExecutor;
 
 import io.github.pandong2015.ffmpeg4j.engine.FfmpegExecutor;
 import io.github.pandong2015.ffmpeg4j.engine.RunOptions;
@@ -31,6 +35,8 @@ import io.github.pandong2015.ffmpeg4j.facade.FfmpegClient;
 @EnableConfigurationProperties(Ffmpeg4jProperties.class)
 public class Ffmpeg4jAutoConfiguration {
 
+    private static final Logger LOG = Logger.getLogger(Ffmpeg4jAutoConfiguration.class.getName());
+
     @Bean
     @ConditionalOnMissingBean
     @Lazy
@@ -47,9 +53,36 @@ public class Ffmpeg4jAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public FfmpegProgressBridge ffmpeg4jProgressBridge(ApplicationEventPublisher publisher,
+                                                       ObjectProvider<FfmpegProgressListener> listeners,
+                                                       Ffmpeg4jProperties properties) {
+        return new FfmpegProgressBridge(publisher, listeners, properties.getAsync().getProgressChannel());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     @Lazy
-    public FfmpegClient ffmpegClient(FfmpegEnvironment ffmpegEnvironment, Ffmpeg4jProperties properties) {
-        return new FfmpegClient(ffmpegEnvironment, buildDefaultRunOptions(properties));
+    public FfmpegClient ffmpegClient(FfmpegEnvironment ffmpegEnvironment,
+                                     Ffmpeg4jProperties properties,
+                                     ObjectProvider<TaskExecutor> taskExecutors,
+                                     FfmpegProgressBridge progressBridge) {
+        RunOptions runOptions = buildDefaultRunOptions(properties);
+        Executor asyncExecutor = null;
+        if (properties.getAsync().isUseSpringExecutor()) {
+            TaskExecutor taskExecutor = taskExecutors.getIfUnique();
+            if (taskExecutor != null) {
+                // TaskExecutor is-a java.util.concurrent.Executor：既作 core 回调派发器，也作异步门面执行器。
+                // 进度回调因此在 executor 线程触发，进而 publishEvent/listener 不占进度 pump 线程（呼应 core 铁律）。
+                asyncExecutor = taskExecutor;
+                runOptions = runOptions
+                        .callbackExecutor(taskExecutor)
+                        .onProgress(progressBridge.asConsumer());
+            } else {
+                LOG.info("ffmpeg4j：未找到唯一的 Spring TaskExecutor，进度回调将走 core 默认（pump 线程），"
+                        + "进度事件桥接暂关闭；如需事件请提供一个（@Primary）TaskExecutor bean。");
+            }
+        }
+        return new FfmpegClient(ffmpegEnvironment, runOptions, asyncExecutor);
     }
 
     @Bean

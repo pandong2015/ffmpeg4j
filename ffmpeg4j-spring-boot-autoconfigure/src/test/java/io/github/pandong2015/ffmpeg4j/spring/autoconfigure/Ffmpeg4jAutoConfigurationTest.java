@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.core.task.TaskExecutor;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import io.github.pandong2015.ffmpeg4j.engine.FfmpegExecutor;
 import io.github.pandong2015.ffmpeg4j.engine.RunOptions;
@@ -78,6 +80,38 @@ class Ffmpeg4jAutoConfigurationTest {
             assertThat(context).hasSingleBean(FfmpegClient.class);
             assertThat(context).hasSingleBean(FfmpegEnvironment.class);
         });
+    }
+
+    @Test
+    void 存在TaskExecutor时callbackExecutor绑定它() {
+        assumeTrue(commandExists("ffmpeg") && commandExists("ffprobe"), "需要 ffmpeg/ffprobe 实例化 client");
+        ThreadPoolTaskExecutor te = newExecutor();
+        runner.withBean("appTaskExecutor", TaskExecutor.class, () -> te).run(context -> {
+            // 取 client bean 会强制解析 env（ffmpeg 在场）；断言默认 RunOptions 的 callbackExecutor 即该 TaskExecutor。
+            FfmpegClient client = context.getBean(FfmpegClient.class);
+            assertThat(client.defaultRunOptions().callbackExecutor()).isSameAs(te);
+        });
+        te.shutdown();
+    }
+
+    @Test
+    void 关闭useSpringExecutor时不绑定callbackExecutor() {
+        assumeTrue(commandExists("ffmpeg") && commandExists("ffprobe"), "需要 ffmpeg/ffprobe 实例化 client");
+        ThreadPoolTaskExecutor te = newExecutor();
+        runner.withBean("appTaskExecutor", TaskExecutor.class, () -> te)
+                .withPropertyValues("ffmpeg4j.async.use-spring-executor=false")
+                .run(context -> {
+                    FfmpegClient client = context.getBean(FfmpegClient.class);
+                    assertThat(client.defaultRunOptions().callbackExecutor()).isNull();
+                });
+        te.shutdown();
+    }
+
+    private static ThreadPoolTaskExecutor newExecutor() {
+        ThreadPoolTaskExecutor te = new ThreadPoolTaskExecutor();
+        te.setCorePoolSize(1);
+        te.initialize();
+        return te;
     }
 
     private static boolean commandExists(String command) {

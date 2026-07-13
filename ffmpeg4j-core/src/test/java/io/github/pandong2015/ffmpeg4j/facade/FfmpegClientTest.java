@@ -12,6 +12,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import org.junit.jupiter.api.Test;
@@ -102,6 +104,33 @@ class FfmpegClientTest {
         RunResult res = client.transcode(src, dst, "libx264", "aac");
         assertEquals(0, res.exitCode(), "转码应成功退出");
         assertTrue(dst.length() > 0, "输出文件应非空");
+    }
+
+    @Test
+    void 异步转码与探测返回CompletableFuture并完成() throws Exception {
+        assumeTrue(commandExists("ffmpeg"), "ffmpeg 不可用，跳过集成测试");
+        assumeTrue(commandExists("ffprobe"), "ffprobe 不可用，跳过集成测试");
+
+        Path dir = Files.createTempDirectory("ffmpeg4j-client-async");
+        File src = dir.resolve("src.mp4").toFile();
+        int code = new ProcessBuilder("ffmpeg", "-y",
+                "-f", "lavfi", "-i", "testsrc=duration=1:size=160x120:rate=10",
+                "-shortest", src.getAbsolutePath())
+                .redirectErrorStream(true).start().waitFor();
+        assumeTrue(code == 0, "ffmpeg 生成素材失败，退出码 " + code);
+
+        FfmpegClient client = new FfmpegClient(FfmpegEnvironment.detect(), RunOptions.defaults());
+
+        // 异步探测：不阻塞调用线程，future 完成后携正时长。
+        ProbeResult probe = client.probeAsync(src).get(30, TimeUnit.SECONDS);
+        assertTrue(probe.durationSeconds() > 0, "异步 probe 应得到正时长");
+
+        // 异步转码：future 完成后退出码 0、输出非空。
+        File dst = dir.resolve("dst.mp4").toFile();
+        CompletableFuture<RunResult> future = client.transcodeAsync(src, dst, "libx264", "aac");
+        RunResult res = future.get(60, TimeUnit.SECONDS);
+        assertEquals(0, res.exitCode(), "异步转码应成功退出");
+        assertTrue(dst.length() > 0, "异步转码输出应非空");
     }
 
     private static boolean commandExists(String command) {
