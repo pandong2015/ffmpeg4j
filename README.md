@@ -335,4 +335,8 @@ CSV 汇总见 `target/site/jacoco/jacoco.csv`。
 
 ## 许可证
 
-> **TODO（待维护者选定）**：本项目许可证尚待维护者决定（如 Apache-2.0 / MIT）。`pom.xml` 的 `<licenses>` 目前为占位，选定后请填入正式条款并补 `LICENSE` 文件正文。
+本库采用 **[Apache License 2.0](./LICENSE)**（归属声明见 [`NOTICE`](./NOTICE)）。可自由用于闭源与商业项目，含明文专利授权。
+
+> **与 ffmpeg 许可证的关系**：本库是纯 Java、**仅通过子进程调用外部 `ffmpeg`/`ffprobe` 二进制**（路线 A：不链接 `libav*`、不内嵌 ffmpeg 源码、不随库分发 ffmpeg），因此**不是 ffmpeg 的衍生作品**，其 Apache-2.0 许可证独立成立。
+>
+> 你机器上安装的 `ffmpeg` 二进制则各按其自身许可证——依构建方式可能是 GPL（如 `--enable-gpl --enable-libx264`）或 LGPL。**为实际部署的那个 ffmpeg 二进制满足合规，是分发者/运维者的责任，与本库许可证无关**（引入本库不会让你的项目「自动 GPL」）。

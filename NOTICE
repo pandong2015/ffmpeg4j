@@ -1,0 +1,26 @@
+ffmpeg4j-core
+Copyright 2026 pandong2015
+
+Licensed under the Apache License, Version 2.0 (the "License");
+see the LICENSE file in the root of this repository for the full text,
+or https://www.apache.org/licenses/LICENSE-2.0 for the canonical copy.
+
+--------------------------------------------------------------------------------
+Relationship to FFmpeg
+--------------------------------------------------------------------------------
+This product is a pure-Java library that invokes the external `ffmpeg` and
+`ffprobe` command-line programs as separate subprocesses. It does NOT link
+against, statically or dynamically embed, or otherwise incorporate the FFmpeg
+libraries (libavcodec, libavformat, etc.) or any FFmpeg source code. FFmpeg is
+neither bundled with nor distributed as part of this product.
+
+Consequently, this product is not a derivative work of FFmpeg and is licensed
+independently under Apache-2.0. The `ffmpeg`/`ffprobe` binaries that an end user
+installs on the target machine remain subject to their own license terms — which
+may be GPL or LGPL depending on how those binaries were built (e.g. with
+`--enable-gpl`). Ensuring compliance for the FFmpeg binary that is actually
+deployed is the responsibility of the party that distributes or operates it.
+
+FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project.
+This product is not affiliated with, endorsed by, or sponsored by the FFmpeg
+project.

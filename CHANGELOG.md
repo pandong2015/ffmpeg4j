@@ -42,6 +42,7 @@
 ### 工程
 
 - Maven 坐标 `io.github.pandong2015:ffmpeg4j-core:1.0.0-SNAPSHOT`，Java 17，JUnit 5.10.2。
+- 许可证 **Apache-2.0**（`LICENSE` 全文 + `NOTICE` 归属声明）；本库仅子进程调用 ffmpeg 二进制、不链接 libav*，独立于 ffmpeg 的 GPL/LGPL。
 - JaCoCo 覆盖率报告（report-only，不设失败阈值）；`maven-source-plugin` / `maven-javadoc-plugin` 生成 sources/javadoc jar。
 - 测试：单元 + 离线 argv 断言 + 真机 E2E（缺 ffmpeg/构建开关时 `assumeTrue` 跳过而非失败）。
 
@@ -54,6 +55,6 @@
 
 ### 待定
 
-- **许可证待维护者选定**（如 Apache-2.0 / MIT）；`pom.xml` 的 `<licenses>` 目前为占位，正式 release 由维护者手动去 SNAPSHOT + 签名部署。
+- 正式 release 由维护者手动去 SNAPSHOT + 签名部署（`pom.xml` 的 `<scm>`/`<url>` 仍为占位，建仓后回填真实地址）。
 
 [1.0.0]: https://github.com/pandong2015/ffmpeg4j/releases/tag/v1.0.0

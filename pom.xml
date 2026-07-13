@@ -16,11 +16,12 @@
     <url>https://github.com/pandong2015/ffmpeg4j</url>
 
     <licenses>
-        <!-- TODO(维护者)：许可证待维护者选定（如 Apache-2.0 / MIT）后填入正式 name + url，并补 LICENSE 文件正文。
-             此处为发布元数据占位，勿视为已选定任何具体开源许可证。 -->
+        <!-- 本库自身采用 Apache-2.0（路线 A：仅子进程调用 ffmpeg 二进制、不链接 libav*，
+             故不受 ffmpeg GPL/LGPL 传染）。全文见仓库根 LICENSE，归属声明见 NOTICE。
+             注意：目标机上安装的 ffmpeg 二进制可能是 GPL 构建，其合规为分发者/使用者责任，与本库许可证无关。 -->
         <license>
-            <name>TODO-待维护者选定（如 Apache-2.0 / MIT）</name>
-            <url>https://github.com/pandong2015/ffmpeg4j</url>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
             <distribution>repo</distribution>
         </license>
     </licenses>
