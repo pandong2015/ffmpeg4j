@@ -1,10 +1,10 @@
 ## 1. 多模块脚手架
 
-- [ ] 1.1 引入聚合父 POM `ffmpeg4j-parent`（packaging=pom，`<modules>` 列 core/autoconfigure/starter），把 Java 17、编码、编译插件与版本号上提为父级统一管理
-- [ ] 1.2 在父 POM 的 `<dependencyManagement>` 锁定 Spring Boot 3.x BOM、`ffmpeg4j-core`、`ffmpeg4j-spring-boot-autoconfigure` 版本，供子模块免版本号引用
-- [ ] 1.3 迁移现有 core 为子模块 `ffmpeg4j-core`：坐标 `io.github.pandong2015:ffmpeg4j-core` **保持不变**，`<parent>` 指向 parent，源码/测试目录原样保留
-- [ ] 1.4 建 `ffmpeg4j-spring-boot-autoconfigure` 骨架模块（依赖 core + `spring-boot-autoconfigure`；actuator/micrometer 以 `optional=true` 声明），空包结构 `...ffmpeg4j.spring.autoconfigure`
-- [ ] 1.5 建 `ffmpeg4j-spring-boot-starter` 骨架模块（packaging=jar、空 `src`，仅 POM 聚合），确认 `mvn -q -o install` 三模块反应堆整体编译通过
+- [x] 1.1 引入聚合父 POM `ffmpeg4j-parent`（packaging=pom，`<modules>` 列 core/autoconfigure/starter），把 Java 17、编码、编译插件与版本号上提为父级统一管理
+- [x] 1.2 在父 POM 的 `<dependencyManagement>` 锁定 Spring Boot 3.x BOM、`ffmpeg4j-core`、`ffmpeg4j-spring-boot-autoconfigure` 版本，供子模块免版本号引用
+- [x] 1.3 迁移现有 core 为子模块 `ffmpeg4j-core`：坐标 `io.github.pandong2015:ffmpeg4j-core` **保持不变**，`<parent>` 指向 parent，源码/测试目录原样保留
+- [x] 1.4 建 `ffmpeg4j-spring-boot-autoconfigure` 骨架模块（依赖 core + `spring-boot-autoconfigure`；actuator/micrometer 以 `optional=true` 声明），空包结构 `...ffmpeg4j.spring.autoconfigure`
+- [x] 1.5 建 `ffmpeg4j-spring-boot-starter` 骨架模块（packaging=jar、空 `src`，仅 POM 聚合），确认 `mvn -q -o install` 三模块反应堆整体编译通过
 
 ## 2. core 重构：实例门面 + 静态委托
 
