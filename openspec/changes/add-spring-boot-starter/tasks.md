@@ -56,7 +56,7 @@
 
 ## 8. 收尾
 
-- [ ] 8.1 完成并核对 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`（含 `Ffmpeg4jAutoConfiguration` 与 `FfmpegObservabilityAutoConfiguration`）
-- [ ] 8.2 生成 `META-INF/spring-configuration-metadata.json`（注解处理器）并手写 `additional-spring-configuration-metadata.json` 补全 `ffmpeg4j.*` 各属性的描述/默认值/枚举提示（IDE 补全）
-- [ ] 8.3 更新 README（Spring Boot 快速上手：引 starter、`ffmpeg4j.*` 配置样例、注入 `FfmpegClient`、进度事件订阅、Actuator 端点）与 CHANGELOG（记多模块化 + starter 新增）
-- [ ] 8.4 发布准备：确认 core 坐标不变、新增 `ffmpeg4j-spring-boot-autoconfigure`/`ffmpeg4j-spring-boot-starter` 坐标与版本对齐父 POM，跑 `mvn -q -o install` 三模块整体验证
+- [x] 8.1 完成并核对 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`（含 `Ffmpeg4jAutoConfiguration` 与 `FfmpegObservabilityAutoConfiguration`）
+- [x] 8.2 生成 `META-INF/spring-configuration-metadata.json`（注解处理器）并手写 `additional-spring-configuration-metadata.json` 补全 `ffmpeg4j.*` 各属性的描述/默认值/枚举提示（IDE 补全）
+- [x] 8.3 更新 README（Spring Boot 快速上手：引 starter、`ffmpeg4j.*` 配置样例、注入 `FfmpegClient`、进度事件订阅、Actuator 端点）与 CHANGELOG（记多模块化 + starter 新增）
+- [x] 8.4 发布准备：确认 core 坐标不变、新增 `ffmpeg4j-spring-boot-autoconfigure`/`ffmpeg4j-spring-boot-starter` 坐标与版本对齐父 POM，跑 `mvn -q -o install` 三模块整体验证

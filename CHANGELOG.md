@@ -39,8 +39,15 @@
 - 每个门面「便捷位置重载 + `XxxOptions` 进阶重载」（`probe` 豁免 Options）。
 - 落实正确性约束：remux 文本字幕转 `mov_text`、图形字幕丢弃；clip 用无歧义 `-ss start -t (end-start)` 并区分快切/精切；concat 前置归一化（含 setsar）+ 流集合异构注入静音/纯色或可诊断拒绝；extractAudio 按扩展名推导编解码器并用 `-map 0:a` 避开封面图。
 
+**实例门面 + Spring Boot Starter（`facade.FfmpegClient` / `ffmpeg4j-spring-boot-*`）**
+- core 新增可实例化门面 `FfmpegClient(FfmpegEnvironment, RunOptions[, Executor])`：8 门面为实例方法 + 对应 `xxxAsync` 返回 `CompletableFuture`（cancel 复用优雅取消阶梯）；静态 `Ffmpeg` 委托默认实例，向后兼容。
+- **Spring Boot 3.x 支持**（新模块 `ffmpeg4j-spring-boot-autoconfigure` + `ffmpeg4j-spring-boot-starter`）：`@ConfigurationProperties(ffmpeg4j)` 外部化配置、`FfmpegEnvironment`/`FfmpegExecutor`/`FfmpegClient` 自动装配（`@ConditionalOnMissingBean` 可覆盖）、启动 fail-fast 校验。
+- 进度桥接：`callbackExecutor` 接 Spring `TaskExecutor`（回调移出 pump 线程），进度经 `FfmpegProgressEvent`（`ApplicationEventPublisher`）或注入的 `FfmpegProgressListener` 递送，通道由 `async.progress-channel` 切换。
+- 可观测（Actuator/Micrometer，classpath 条件装配）：Health（含 libass/libfreetype 判定）、Info、指标（门面计时 + 失败分桶 + 运行中任务 Gauge）。
+
 ### 工程
 
+- 多模块化：聚合父 POM `ffmpeg4j-parent` + 三子模块（`ffmpeg4j-core` 坐标不变、`ffmpeg4j-spring-boot-autoconfigure`、`ffmpeg4j-spring-boot-starter`）；Spring Boot 3.5.3 BOM 统一版本；core 保持零重型依赖（依赖树无 Spring/Jackson/Guava）。
 - Maven 坐标 `io.github.pandong2015:ffmpeg4j-core:1.0.0-SNAPSHOT`，Java 17，JUnit 5.10.2。
 - 许可证 **Apache-2.0**（`LICENSE` 全文 + `NOTICE` 归属声明）；本库仅子进程调用 ffmpeg 二进制、不链接 libav*，独立于 ffmpeg 的 GPL/LGPL。
 - JaCoCo 覆盖率报告（report-only，不设失败阈值）；`maven-source-plugin` / `maven-javadoc-plugin` 生成 sources/javadoc jar。

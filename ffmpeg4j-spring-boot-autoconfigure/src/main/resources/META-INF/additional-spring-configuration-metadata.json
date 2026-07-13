@@ -1,0 +1,74 @@
+{
+  "properties": [
+    {
+      "name": "ffmpeg4j.ffmpeg-path",
+      "type": "java.lang.String",
+      "description": "显式 ffmpeg 二进制路径；留空则走 PATH 发现。须与 ffprobe-path 同配或同空。"
+    },
+    {
+      "name": "ffmpeg4j.ffprobe-path",
+      "type": "java.lang.String",
+      "description": "显式 ffprobe 二进制路径；留空则走 PATH 发现。须与 ffmpeg-path 同配或同空。"
+    },
+    {
+      "name": "ffmpeg4j.fail-fast",
+      "type": "java.lang.Boolean",
+      "description": "启动期是否 fail-fast 校验二进制存在：缺失即令上下文启动失败，而非延迟到首次调用。",
+      "defaultValue": true
+    },
+    {
+      "name": "ffmpeg4j.default-timeout",
+      "type": "java.time.Duration",
+      "description": "门面默认超时；留空表示不设超时。映射进装配 FfmpegClient 的默认 RunOptions。"
+    },
+    {
+      "name": "ffmpeg4j.cancel-grace-period",
+      "type": "java.time.Duration",
+      "description": "优雅取消（写 q）后升级到 SIGTERM 的宽限期。",
+      "defaultValue": "5s"
+    },
+    {
+      "name": "ffmpeg4j.terminate-grace-period",
+      "type": "java.time.Duration",
+      "description": "SIGTERM 后升级到 SIGKILL 的宽限期。",
+      "defaultValue": "5s"
+    },
+    {
+      "name": "ffmpeg4j.min-version-check",
+      "type": "java.lang.Boolean",
+      "description": "启动 fail-fast 时是否对版本 < 4.2 记录告警；无论如何均不因版本号硬失败。",
+      "defaultValue": true
+    },
+    {
+      "name": "ffmpeg4j.async.use-spring-executor",
+      "type": "java.lang.Boolean",
+      "description": "是否把进度回调 callbackExecutor 接到 Spring TaskExecutor（进度回调移出 pump 线程）。",
+      "defaultValue": true
+    },
+    {
+      "name": "ffmpeg4j.async.progress-channel",
+      "type": "io.github.pandong2015.ffmpeg4j.spring.autoconfigure.ProgressChannel",
+      "description": "进度递送通道：application-event（广播）/ listener（直投）/ both。",
+      "defaultValue": "application-event"
+    }
+  ],
+  "hints": [
+    {
+      "name": "ffmpeg4j.async.progress-channel",
+      "values": [
+        {
+          "value": "application-event",
+          "description": "经 ApplicationEventPublisher 广播 FfmpegProgressEvent（松耦合、多订阅者，默认）。"
+        },
+        {
+          "value": "listener",
+          "description": "直接回调容器中注入的 FfmpegProgressListener bean（聚焦、低开销）。"
+        },
+        {
+          "value": "both",
+          "description": "两条通道都递送。"
+        }
+      ]
+    }
+  ]
+}

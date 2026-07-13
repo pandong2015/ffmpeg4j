@@ -295,6 +295,89 @@ for (StreamInfo s : p.subtitleStreams()) {
 
 ---
 
+## Spring Boot Starter
+
+`ffmpeg4j-spring-boot-starter`（Spring Boot 3.x / Java 17）把 `FfmpegClient` 装成可注入 bean，配置走 `application.yml`，并可选接入 Actuator 健康/信息与 Micrometer 指标。
+
+### 引入
+
+```xml
+<dependency>
+    <groupId>io.github.pandong2015</groupId>
+    <artifactId>ffmpeg4j-spring-boot-starter</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+</dependency>
+```
+
+### 配置（`application.yml`）
+
+```yaml
+ffmpeg4j:
+  ffmpeg-path: /usr/local/bin/ffmpeg      # 留空则走 PATH 发现；与 ffprobe-path 须同配或同空
+  ffprobe-path: /usr/local/bin/ffprobe
+  fail-fast: true                         # 启动即校验二进制，缺失则启动失败（默认 true）
+  default-timeout: 30m                    # 映射进默认 RunOptions（可选）
+  cancel-grace-period: 5s
+  terminate-grace-period: 5s
+  async:
+    use-spring-executor: true             # 进度回调接 Spring TaskExecutor（移出 pump 线程）
+    progress-channel: application-event   # application-event | listener | both
+```
+
+### 注入与使用
+
+```java
+@Service
+public class VideoService {
+    private final FfmpegClient ffmpeg;               // 由 starter 自动装配
+
+    public VideoService(FfmpegClient ffmpeg) {
+        this.ffmpeg = ffmpeg;
+    }
+
+    public void transcode(File in, File out) {
+        ffmpeg.transcode(in, out, "libx264", "aac");           // 同步
+    }
+
+    public CompletableFuture<RunResult> transcodeAsync(File in, File out) {
+        return ffmpeg.transcodeAsync(in, out, "libx264", "aac"); // 异步，在 TaskExecutor 上执行
+    }
+}
+```
+
+> 用户可用 `@Bean FfmpegClient`/`FfmpegEnvironment` 覆盖任意默认（`@ConditionalOnMissingBean`）。
+> 注意：静态 `Ffmpeg.xxx` 永远走全局默认环境，**不受** `ffmpeg4j.*` 配置影响；配置只作用于注入的 `FfmpegClient` bean。
+
+### 进度事件
+
+进度经绑定的 `TaskExecutor` 派发（绝不占 pump 线程）。两条通道可切（`progress-channel`）：
+
+```java
+// 通道 application-event / both：@EventListener 订阅
+@EventListener
+public void onProgress(FfmpegProgressEvent event) {
+    log.info("进度 {}", event.progress().raw());
+}
+
+// 通道 listener / both：注入一个 FfmpegProgressListener bean
+@Bean
+FfmpegProgressListener myListener() {
+    return event -> log.info("进度 {}", event.progress().raw());
+}
+```
+
+### 可观测（可选）
+
+引入 `spring-boot-starter-actuator`（和 Micrometer 实现）即自动装配：
+
+- **Health** `/actuator/health`：二进制均可用且 `libass`/`libfreetype` 均在 → `UP`；任一缺失 → `DOWN`（`details` 指明缺失项）；版本 < 4.2 仅告警仍 `UP`。
+- **Info** `/actuator/info`：暴露 ffmpeg 版本与构建开关。
+- **Metrics**：`ffmpeg4j.facade.duration`（Timer，tag `operation`/`result`）、`ffmpeg4j.facade.errors`（失败按错误原因分桶）、`ffmpeg4j.subprocess.active`（运行中门面任务数 Gauge）。
+
+> 缺 actuator/micrometer 时对应组件静默跳过、不影响启动；不用 Spring 的纯 Java 用户直接依赖 `ffmpeg4j-core` 即可，其依赖树无任何 Spring。
+
+---
+
 ## 已知约束
 
 1. **pipe 输入模式无法优雅取消**：stdin 被输入媒体占用，写不进 `q`，取消自动降级为 SIGTERM，输出可能未 finalize。v1.0 的门面都写盘（stdin 空闲，优雅取消可用），故该约束主要影响未来的 frame 进出场景。
@@ -318,10 +401,10 @@ mvn test          # 运行全部单元 + 集成测试
 已接入 **JaCoCo**（仅构建/测试期插件，report-only、不设失败阈值）。`mvn test` 后打开报告：
 
 ```bash
-open target/site/jacoco/index.html    # 或用浏览器打开该文件
+open ffmpeg4j-core/target/site/jacoco/index.html    # 多模块：报告在各模块 target 下
 ```
 
-CSV 汇总见 `target/site/jacoco/jacoco.csv`。
+CSV 汇总见 `ffmpeg4j-core/target/site/jacoco/jacoco.csv`。
 
 > ⚠️ **覆盖率报告需用 JDK 17 或 21 构建**。JaCoCo 0.8.12 无法插桩 JDK ≥ 23 的 class（会报 `Unsupported class file major version 70` 等），此时**测试照常全绿、jar 照常产出，仅覆盖率数据缺失**。若默认 JDK 较新，临时切换即可：
 >
