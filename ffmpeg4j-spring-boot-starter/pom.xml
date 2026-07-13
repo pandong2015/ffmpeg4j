@@ -11,7 +11,7 @@
     </parent>
 
     <!-- 便利聚合 starter（遵 Spring 官方约定）：不含 Java 源码，仅聚合 autoconfigure（传递引入 core）
-         与常用可选依赖。用户「引一个坐标全带齐」。装配实现全部驻留 autoconfigure 模块。 -->
+         与常用可选依赖。用户「引一个坐标全带齐」，装配实现全部驻留 autoconfigure 模块。 -->
     <artifactId>ffmpeg4j-spring-boot-starter</artifactId>
     <packaging>jar</packaging>
 
@@ -19,9 +19,23 @@
     <description>ffmpeg4j 的 Spring Boot Starter：一个坐标带齐 autoconfigure + core，开箱注入 FfmpegClient。</description>
 
     <dependencies>
+        <!-- 核心：传递引入 autoconfigure（进而 core）——DI/配置/fail-fast/async/进度事件开箱即用。 -->
         <dependency>
             <groupId>io.github.pandong2015</groupId>
             <artifactId>ffmpeg4j-spring-boot-autoconfigure</artifactId>
+        </dependency>
+
+        <!-- 可观测为可选能力：以 optional=true 声明，不强制所有 starter 用户拉入 actuator/micrometer。
+             需要 Health/Info/指标者，自行在应用中引入 spring-boot-starter-actuator / micrometer 实现即触发条件装配。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
+            <optional>true</optional>
         </dependency>
     </dependencies>
 </project>

@@ -42,9 +42,9 @@
 
 ## 6. starter 聚合 POM
 
-- [ ] 6.1 `ffmpeg4j-spring-boot-starter` POM `compile` 依赖 `ffmpeg4j-spring-boot-autoconfigure`（传递引入 core），不含任何 Java 源码
-- [ ] 6.2 以 `optional=true` 声明常用可选依赖（`spring-boot-starter-actuator`、`micrometer-core`），由使用方按需引入触发条件装配
-- [ ] 6.3 依赖卫生核查：确认 core 反应堆仍**零重型依赖**，Spring 相关依赖只落在 autoconfigure/starter；`mvn -q dependency:tree` 校验无 Jackson/Guava 渗入 core
+- [x] 6.1 `ffmpeg4j-spring-boot-starter` POM `compile` 依赖 `ffmpeg4j-spring-boot-autoconfigure`（传递引入 core），不含任何 Java 源码
+- [x] 6.2 以 `optional=true` 声明常用可选依赖（`spring-boot-starter-actuator`、`micrometer-core`），由使用方按需引入触发条件装配
+- [x] 6.3 依赖卫生核查：确认 core 反应堆仍**零重型依赖**，Spring 相关依赖只落在 autoconfigure/starter；`mvn -q dependency:tree` 校验无 Jackson/Guava 渗入 core
 
 ## 7. 测试：切片装配 + 冒烟
 
