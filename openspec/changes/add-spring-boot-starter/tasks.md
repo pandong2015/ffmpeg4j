@@ -16,12 +16,12 @@
 
 ## 3. autoconfigure：属性绑定与条件装配
 
-- [ ] 3.1 新增 `Ffmpeg4jProperties`（`@ConfigurationProperties(prefix="ffmpeg4j")`）：`ffmpegPath`/`ffprobePath`/`failFast`(默认 true)/`defaultTimeout`(Duration)/`cancelGracePeriod`(默认 5s)/`terminateGracePeriod`(默认 5s)/`minVersionCheck` 及嵌套 `async.useSpringExecutor`(默认 true)/`async.progressChannel`(枚举 application-event/listener/both，默认 application-event)
-- [ ] 3.2 新增 `Ffmpeg4jAutoConfiguration`（`@AutoConfiguration` + `@EnableConfigurationProperties(Ffmpeg4jProperties.class)`），承载后续各 `@Bean`
-- [ ] 3.3 `@Bean @ConditionalOnMissingBean FfmpegEnvironment ffmpegEnvironment(...)`：显式 `ffmpeg-path`/`ffprobe-path` 都给→`FfmpegBinaries.of(...)`；否则走 PATH `locate` 发现，据此构造 `FfmpegEnvironment`
-- [ ] 3.4 `@Bean @ConditionalOnMissingBean FfmpegExecutor ffmpegExecutor(FfmpegEnvironment env)` 与 `@Bean @ConditionalOnMissingBean FfmpegClient ffmpegClient(FfmpegEnvironment env, RunOptions defaultRunOptions)`；由属性映射装配 `RunOptions`(timeout/两 grace)
-- [ ] 3.5 启动 fail-fast：`failFast=true` 时在 bean 初始化阶段调 `FfmpegEnvironment.detect()` + 版本/能力校验，二进制缺失直接令 context 启动失败；`min-version-check` <4.2 仅告警不硬失败（沿用 core 语义）
-- [ ] 3.6 新增 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 登记 `Ffmpeg4jAutoConfiguration`，使 auto-config 生效
+- [x] 3.1 新增 `Ffmpeg4jProperties`（`@ConfigurationProperties(prefix="ffmpeg4j")`）：`ffmpegPath`/`ffprobePath`/`failFast`(默认 true)/`defaultTimeout`(Duration)/`cancelGracePeriod`(默认 5s)/`terminateGracePeriod`(默认 5s)/`minVersionCheck` 及嵌套 `async.useSpringExecutor`(默认 true)/`async.progressChannel`(枚举 application-event/listener/both，默认 application-event)
+- [x] 3.2 新增 `Ffmpeg4jAutoConfiguration`（`@AutoConfiguration` + `@EnableConfigurationProperties(Ffmpeg4jProperties.class)`），承载后续各 `@Bean`
+- [x] 3.3 `@Bean @ConditionalOnMissingBean FfmpegEnvironment ffmpegEnvironment(...)`：显式 `ffmpeg-path`/`ffprobe-path` 都给→`FfmpegBinaries.of(...)`；否则走 PATH `locate` 发现，据此构造 `FfmpegEnvironment`
+- [x] 3.4 `@Bean @ConditionalOnMissingBean FfmpegExecutor ffmpegExecutor(FfmpegEnvironment env)` 与 `@Bean @ConditionalOnMissingBean FfmpegClient ffmpegClient(FfmpegEnvironment env, RunOptions defaultRunOptions)`；由属性映射装配 `RunOptions`(timeout/两 grace)
+- [x] 3.5 启动 fail-fast：`failFast=true` 时在 bean 初始化阶段调 `FfmpegEnvironment.detect()` + 版本/能力校验，二进制缺失直接令 context 启动失败；`min-version-check` <4.2 仅告警不硬失败（沿用 core 语义）
+- [x] 3.6 新增 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 登记 `Ffmpeg4jAutoConfiguration`，使 auto-config 生效
 
 ## 4. async + 进度事件桥接
 
