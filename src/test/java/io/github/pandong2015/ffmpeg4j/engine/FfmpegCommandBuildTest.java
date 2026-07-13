@@ -1,0 +1,125 @@
+package io.github.pandong2015.ffmpeg4j.engine;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
+
+import org.junit.jupiter.api.Test;
+
+/**
+ * 不依赖 ffmpeg 的纯逻辑单测：锁定命令改写、拓扑→进度通道选择、以及非零退出的终局归类分支契约。
+ * 这些核心逻辑此前仅由 {@code assumeTrue(commandExists("ffmpeg"))} 门控的集成测试覆盖，无 ffmpeg
+ * 环境下完全未验证；此处以纯函数种子补齐。
+ */
+class FfmpegCommandBuildTest {
+
+    private static long count(List<String> xs, String v) {
+        return xs.stream().filter(v::equals).count();
+    }
+
+    // —— 命令改写 buildEffectiveCommand —— //
+
+    @Test
+    void 占位argv0被替换为真实二进制且不重复y() {
+        // 编译器已给出 -y；改写不得再次注入 -y。
+        List<String> raw = List.of("ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc", "/out.mp4");
+        List<String> eff = FfmpegRunImpl.buildEffectiveCommand("/opt/ff/ffmpeg", raw, "pipe:1");
+
+        assertEquals("/opt/ff/ffmpeg", eff.get(0), "argv[0] 占位应被替换为解析后的二进制绝对路径");
+        assertFalse(eff.contains("ffmpeg"), "占位字面量 ffmpeg 不应残留在参数中");
+        assertEquals(1, count(eff, "-y"), "-y 恰出现一次，改写不得重复注入");
+        assertTrue(eff.contains("/out.mp4"), "原输出目标应原样保留");
+    }
+
+    @Test
+    void pipe进度参数恰注入一次() {
+        List<String> eff = FfmpegRunImpl.buildEffectiveCommand(
+                "/bin/ffmpeg", List.of("ffmpeg", "-i", "/in.mp4", "/out.mp4"), "pipe:1");
+        assertEquals(1, count(eff, "-progress"), "-progress 恰注入一次");
+        int idx = eff.indexOf("-progress");
+        assertEquals("pipe:1", eff.get(idx + 1), "pipe 拓扑应注入 pipe:1");
+    }
+
+    @Test
+    void tcp进度参数恰注入一次() {
+        List<String> eff = FfmpegRunImpl.buildEffectiveCommand(
+                "/bin/ffmpeg", List.of("ffmpeg", "-i", "/in.mp4", "pipe:1"), "tcp://127.0.0.1:5555");
+        assertEquals(1, count(eff, "-progress"), "-progress 恰注入一次");
+        int idx = eff.indexOf("-progress");
+        assertEquals("tcp://127.0.0.1:5555", eff.get(idx + 1), "tcp 拓扑应注入回环 tcp 地址");
+    }
+
+    @Test
+    void 无进度通道不注入progress() {
+        // 降级为无进度（tcp 绑定失败）时 progressArg 为 null，改写不得注入 -progress。
+        List<String> eff = FfmpegRunImpl.buildEffectiveCommand(
+                "/bin/ffmpeg", List.of("ffmpeg", "-i", "/in.mp4", "/out.mp4"), null);
+        assertEquals(0, count(eff, "-progress"), "progressArg 为 null 时不注入 -progress");
+        assertEquals("/bin/ffmpeg", eff.get(0));
+    }
+
+    // —— 拓扑 → 进度通道选择 —— //
+
+    @Test
+    void 拓扑到通道的选择映射() {
+        // stdout 空闲（写盘）→ pipe 通道。
+        ProgressChannel pipe = ProgressChannel.forTopology(new IoTopology(false, false));
+        assertInstanceOf(PipeProgressChannel.class, pipe, "stdout 空闲应选 pipe 通道");
+        assertEquals("pipe:1", pipe.progressArg());
+        pipe.close();
+
+        // stdout 传媒体 → tcp 通道（构造即 bind 回环端口）。
+        ProgressChannel tcp = ProgressChannel.forTopology(new IoTopology(false, true));
+        try {
+            assertInstanceOf(TcpProgressChannel.class, tcp, "stdout 传媒体应选 tcp 通道");
+            assertTrue(tcp.progressArg().startsWith("tcp://127.0.0.1:"), "tcp 通道应监听回环地址");
+        } finally {
+            tcp.close();
+        }
+
+        // 喂输入但 stdout 空闲 → 仍走 pipe（进度与 stdin 无关）。
+        ProgressChannel fedPipe = ProgressChannel.forTopology(new IoTopology(true, false));
+        assertInstanceOf(PipeProgressChannel.class, fedPipe, "stdout 空闲即走 pipe，不受 stdin 影响");
+        fedPipe.close();
+    }
+
+    // —— 终局归类 classifyTermination（findings：超时 vs 用户取消、内部管道不外泄）—— //
+
+    @Test
+    void 归类_成功与真实媒体失败() {
+        assertEquals(FfmpegRunImpl.Termination.SUCCESS,
+                FfmpegRunImpl.classifyTermination(0, false, false, ""));
+        assertEquals(FfmpegRunImpl.Termination.MEDIA_FAILURE,
+                FfmpegRunImpl.classifyTermination(1, false, false, "Unknown encoder 'libx265'"),
+                "非零退出且非内部/超时/取消 → 媒体失败（外泄为 FfmpegException）");
+    }
+
+    @Test
+    void 归类_内部管道故障不外泄为媒体失败() {
+        // finding: internal 分类此前是死代码；归类须把回环进度管道 Connection refused 判为 INTERNAL，
+        // 由 doAwait 以 RunResult 正常返回而非抛媒体类 FfmpegException。
+        assertEquals(FfmpegRunImpl.Termination.INTERNAL,
+                FfmpegRunImpl.classifyTermination(1, false, false,
+                        "tcp://127.0.0.1:54321: Connection refused"),
+                "回环进度管道 Connection refused 应归 INTERNAL，不外泄为媒体错误");
+    }
+
+    @Test
+    void 归类_用户先取消不被后到超时覆盖() {
+        // finding: 先到的用户取消（timedOut 因看门狗 CAS 落败而保持 false）应返回结果而非超时异常。
+        assertEquals(FfmpegRunImpl.Termination.CANCELLED,
+                FfmpegRunImpl.classifyTermination(255, false, true, ""),
+                "用户取消（timedOut=false, cancelRequested=true）→ 返回结果");
+    }
+
+    @Test
+    void 归类_真实超时抛超时异常() {
+        // 超时确实抢先：timedOut=true（同时看门狗的 cancel 也置了 cancelRequested）→ 仍判 TIMEOUT。
+        assertEquals(FfmpegRunImpl.Termination.TIMEOUT,
+                FfmpegRunImpl.classifyTermination(255, true, true, ""),
+                "超时抢先时（timedOut=true）应判 TIMEOUT，优先于取消返回");
+    }
+}

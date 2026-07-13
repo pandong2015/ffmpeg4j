@@ -70,6 +70,20 @@ public final class Input {
         return new AudioStream(new Origin.InputOrigin(this, MediaType.AUDIO, typedIndex));
     }
 
+    /**
+     * 首路<em>可选</em>视频流（渲染为 {@code 0:v:0?}）：当输入实际不含视频流时，编译器产出的 {@code -map}
+     * 带尾随 {@code ?}，令 ffmpeg 静默跳过该映射而非以「matches no streams」中止。供门面在<em>不确定</em>
+     * 输入是否含视频流（如转码/截段可能面对纯音频输入）时使用。
+     */
+    public VideoStream videoOptional() {
+        return new VideoStream(new Origin.InputOrigin(this, MediaType.VIDEO, 0, true));
+    }
+
+    /** 首路<em>可选</em>音频流（渲染为 {@code 0:a:0?}），语义同 {@link #videoOptional()}（如面对无音轨的静音视频）。 */
+    public AudioStream audioOptional() {
+        return new AudioStream(new Origin.InputOrigin(this, MediaType.AUDIO, 0, true));
+    }
+
     public SubtitleStream subtitle() {
         return subtitle(0);
     }

@@ -163,6 +163,30 @@ public final class Filters {
                 new AudioStream(new Origin.FilterOrigin(node, 1)));
     }
 
+    /**
+     * 纯音频拼接（{@code concat=n=N:v=0:a=1}）：各段一路音频，输出一路音频。
+     * 供门面在所有输入均无视轨时走纯音频路径，避免无谓地注入并编码黑帧视频。
+     */
+    public static AudioStream concatAudio(List<AudioStream> segments) {
+        List<Stream> ins = new ArrayList<>(segments);
+        FilterNode node = new FilterNode("concat", List.of(
+                Arg.of("n", Integer.toString(segments.size())), Arg.of("v", "0"), Arg.of("a", "1")),
+                ins, List.of(MediaType.AUDIO));
+        return new AudioStream(new Origin.FilterOrigin(node, 0));
+    }
+
+    /**
+     * 纯视频拼接（{@code concat=n=N:v=1:a=0}）：各段一路视频，输出一路视频。
+     * 供门面在所有输入均无音轨时走纯视频路径，避免注入无谓的静音音轨。
+     */
+    public static VideoStream concatVideo(List<VideoStream> segments) {
+        List<Stream> ins = new ArrayList<>(segments);
+        FilterNode node = new FilterNode("concat", List.of(
+                Arg.of("n", Integer.toString(segments.size())), Arg.of("v", "1"), Arg.of("a", "0")),
+                ins, List.of(MediaType.VIDEO));
+        return new VideoStream(new Origin.FilterOrigin(node, 0));
+    }
+
     // ===== 字幕烧录族（第 16 个 curated；字幕源为文件参数而非 pad）=====
 
     /** 烧录字幕文件（{@code subtitles=} 滤镜，支持 {@code force_style}）。需 {@code --enable-libass}。 */

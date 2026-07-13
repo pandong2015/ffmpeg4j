@@ -64,6 +64,16 @@ public final class Output {
         return new Output(path, merged, outputArgs);
     }
 
+    /**
+     * 追加输出侧字幕编码 {@code -c:s <name>}，返回新 {@code Output}（不可变）。
+     * 与映射 {@link SubtitleStream} 配合完成软字幕的透传（{@link SubtitleCodec#COPY}）、
+     * 抽取与 srt↔vtt↔ass 转换。
+     */
+    public Output subtitleCodec(SubtitleCodec codec) {
+        Objects.requireNonNull(codec, "字幕编码不可为空");
+        return withArgs("-c:s", codec.ffmpegName());
+    }
+
     @Override
     public String toString() {
         return "Output[" + path + ", mapped=" + mapped.size() + (outputArgs.isEmpty() ? "" : ", args=" + outputArgs) + "]";

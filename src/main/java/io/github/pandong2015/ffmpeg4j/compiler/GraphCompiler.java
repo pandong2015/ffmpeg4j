@@ -167,11 +167,16 @@ public final class GraphCompiler {
         for (Output o : outputs) {
             List<Stream> ms = o.mapped();
             for (int i = 0; i < ms.size(); i++) {
+                Stream stream = ms.get(i);
                 String lbl = consumerLabel.get(new MapOutput(o, i));
                 argv.add("-map");
-                argv.add(lbl == null
-                        ? producerLabel(keyOf(ms.get(i)), inputIndex, nodeOutLabels)  // 原始输入流说明符 0:v:0
-                        : "[" + lbl + "]");
+                if (lbl != null) {
+                    argv.add("[" + lbl + "]");
+                } else {
+                    // 原始输入流说明符 0:v:0；可选流追加 '?' 令缺流时 ffmpeg 静默跳过而非中止。
+                    String spec = producerLabel(keyOf(stream), inputIndex, nodeOutLabels);
+                    argv.add(isOptionalInput(stream) ? spec + "?" : spec);
+                }
             }
             argv.addAll(o.outputArgs());
             argv.add(o.path().toString());
@@ -236,6 +241,11 @@ public final class GraphCompiler {
 
     private static String letterOf(MediaType t) {
         return t.specifierLetter();
+    }
+
+    /** 该流是否为「可选输入流」——渲染 {@code -map} 时须追加尾随 {@code ?}。 */
+    private static boolean isOptionalInput(Stream s) {
+        return s.origin() instanceof Origin.InputOrigin io && io.optional();
     }
 
     // pad 标识：输入 pad 按值（同一 0:v:0 复用），滤镜 pad 按节点身份

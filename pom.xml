@@ -4,7 +4,8 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <!-- Maven 坐标为 v1.0 provisional，最终由 tasks 8.4 敲定 -->
+    <!-- Maven 坐标已敲定：groupId io.github.pandong2015 / artifactId ffmpeg4j-core。
+         版本保持 1.0.0-SNAPSHOT；正式 release 由维护者手动去 SNAPSHOT + 签名部署。 -->
     <groupId>io.github.pandong2015</groupId>
     <artifactId>ffmpeg4j-core</artifactId>
     <version>1.0.0-SNAPSHOT</version>
@@ -12,10 +13,37 @@
 
     <name>ffmpeg4j-core</name>
     <description>纯 Java、依赖预装 ffmpeg/ffprobe 二进制的视频处理库（路线 A，无 JNI）：不可变「流即值」编排模型 + 图编译器 + 稳健的子进程执行引擎。</description>
+    <url>https://github.com/pandong2015/ffmpeg4j</url>
+
+    <licenses>
+        <!-- TODO(维护者)：许可证待维护者选定（如 Apache-2.0 / MIT）后填入正式 name + url，并补 LICENSE 文件正文。
+             此处为发布元数据占位，勿视为已选定任何具体开源许可证。 -->
+        <license>
+            <name>TODO-待维护者选定（如 Apache-2.0 / MIT）</name>
+            <url>https://github.com/pandong2015/ffmpeg4j</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <id>pandong2015</id>
+            <name>pandong2015</name>
+            <url>https://github.com/pandong2015</url>
+        </developer>
+    </developers>
+
+    <scm>
+        <!-- 无 git remote，暂以 github.com/pandong2015/ffmpeg4j 占位；建仓后更新为真实地址。 -->
+        <connection>scm:git:https://github.com/pandong2015/ffmpeg4j.git</connection>
+        <developerConnection>scm:git:git@github.com:pandong2015/ffmpeg4j.git</developerConnection>
+        <url>https://github.com/pandong2015/ffmpeg4j</url>
+    </scm>
 
     <properties>
         <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <junit.version>5.10.2</junit.version>
     </properties>
 
@@ -40,6 +68,68 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
+            </plugin>
+
+            <!-- JaCoCo：仅构建/测试期插件，report-only、不设失败阈值（无 check 目标），
+                 不新增任何运行时依赖。`mvn test` 后覆盖率报告见 target/site/jacoco/index.html。 -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.12</version>
+                <executions>
+                    <execution>
+                        <id>jacoco-prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>jacoco-report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- sources jar：绑定 package 阶段，`mvn test` 不触发，不影响测试速度。 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <version>3.3.1</version>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>jar-no-fork</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- javadoc jar：UTF-8 + doclint none 容错（中文注释、宽松校验），同样仅在 package 阶段触发。 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <version>3.7.0</version>
+                <configuration>
+                    <doclint>none</doclint>
+                    <encoding>UTF-8</encoding>
+                    <charset>UTF-8</charset>
+                    <docencoding>UTF-8</docencoding>
+                    <failOnError>false</failOnError>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
