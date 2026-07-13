@@ -55,9 +55,30 @@ final class FacadeSupport {
         return ro;
     }
 
-    /** 以进程级缓存环境阻塞执行编译产物。 */
+    /** 以进程级缓存环境阻塞执行编译产物（静态门面默认路径）。 */
     static RunResult execute(CompiledCommand cmd, RunOptions ro) {
-        return new FfmpegExecutor(FfmpegEnvironment.shared()).run(cmd, ro);
+        return execute(cmd, FfmpegEnvironment.shared(), ro);
+    }
+
+    /** 以显式注入的环境阻塞执行编译产物（供实例门面 {@link FfmpegClient} 使用配置的二进制）。 */
+    static RunResult execute(CompiledCommand cmd, FfmpegEnvironment env, RunOptions ro) {
+        return new FfmpegExecutor(env).run(cmd, ro);
+    }
+
+    /**
+     * 以 {@code base} 为基础，用<em>非空</em>的 {@code timeout}/{@code onProgress} 逐字段覆盖后返回合并的
+     * {@link RunOptions}。用于把调用点 {@code XxxOptions} 叠加到实例门面的默认 {@code RunOptions} 之上——
+     * 调用点显式设定的字段覆盖默认，其余（宽限期/callbackExecutor 等）沿用 {@code base}。
+     */
+    static RunOptions runOptions(RunOptions base, Duration timeout, Consumer<Progress> onProgress) {
+        RunOptions ro = base;
+        if (timeout != null) {
+            ro = ro.timeout(timeout);
+        }
+        if (onProgress != null) {
+            ro = ro.onProgress(onProgress);
+        }
+        return ro;
     }
 
     // ===== 1. transcode（强制转码）=====

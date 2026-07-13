@@ -8,11 +8,11 @@
 
 ## 2. core 重构：实例门面 + 静态委托
 
-- [ ] 2.1 新增 `facade/FfmpegClient(FfmpegEnvironment env, RunOptions defaultRunOptions)`：把 8 门面（transcode/remux/clip/extractAudio/thumbnail/concat/burnSubtitles/probe）落为实例方法，含各自便捷重载与 `XxxOptions` 进阶重载
-- [ ] 2.2 微调 `FacadeSupport`：新增 `execute(CompiledCommand cmd, FfmpegEnvironment env, RunOptions ro)` 重载，去掉写死的 `FfmpegEnvironment.shared()`；`buildXxx` 纯函数签名不动
-- [ ] 2.3 `FfmpegClient` 各门面调用点：execute 传注入的 `env`，probe 走 `MediaProbe.probe(file, env.binaries().ffprobeCommand())`，调用点 `XxxOptions` 与 `defaultRunOptions` 合并
-- [ ] 2.4 改造静态 `Ffmpeg`：8 个 public static 方法委托给默认实例 `new FfmpegClient(FfmpegEnvironment.shared(), RunOptions.defaults())`，签名与行为保持不变（向后兼容）
-- [ ] 2.5 新增 `FfmpegClientTest`：断言实例门面与静态门面对同一入参产出一致 argv/CompiledCommand；跑 `mvn -q test` 确认现有全部单测保持全绿
+- [x] 2.1 新增 `facade/FfmpegClient(FfmpegEnvironment env, RunOptions defaultRunOptions)`：把 8 门面（transcode/remux/clip/extractAudio/thumbnail/concat/burnSubtitles/probe）落为实例方法，含各自便捷重载与 `XxxOptions` 进阶重载
+- [x] 2.2 微调 `FacadeSupport`：新增 `execute(CompiledCommand cmd, FfmpegEnvironment env, RunOptions ro)` 重载，去掉写死的 `FfmpegEnvironment.shared()`；`buildXxx` 纯函数签名不动
+- [x] 2.3 `FfmpegClient` 各门面调用点：execute 传注入的 `env`，probe 走 `MediaProbe.probe(file, env.binaries().ffprobeCommand())`，调用点 `XxxOptions` 与 `defaultRunOptions` 合并
+- [x] 2.4 改造静态 `Ffmpeg`：8 个 public static 方法委托给默认实例 `new FfmpegClient(FfmpegEnvironment.shared(), RunOptions.defaults())`，签名与行为保持不变（向后兼容）
+- [x] 2.5 新增 `FfmpegClientTest`：断言实例门面与静态门面对同一入参产出一致 argv/CompiledCommand；跑 `mvn -q test` 确认现有全部单测保持全绿
 
 ## 3. autoconfigure：属性绑定与条件装配
 
