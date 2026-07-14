@@ -2,7 +2,7 @@
 
 本文件记录 ffmpeg4j 各版本的显著变更。遵循「新增 / 变更 / 修复」分类，日期采用 ISO 8601。
 
-## [1.0.0] - 未发布（当前 1.0.0-SNAPSHOT）
+## [1.0.0] - 2026-07-14
 
 首个版本。纯 Java、封装预装 `ffmpeg`/`ffprobe` 二进制（路线 A，无 JNI/JavaCPP）的通用视频处理库：不可变「流即值」编排 + 图编译器 + 稳健执行引擎。
 
@@ -48,7 +48,7 @@
 ### 工程
 
 - 多模块化：聚合父 POM `ffmpeg4j-parent` + 三子模块（`ffmpeg4j-core` 坐标不变、`ffmpeg4j-spring-boot-autoconfigure`、`ffmpeg4j-spring-boot-starter`）；Spring Boot 3.5.3 BOM 统一版本；core 保持零重型依赖（依赖树无 Spring/Jackson/Guava）。
-- Maven 坐标 `io.github.pandong2015:ffmpeg4j-core:1.0.0-SNAPSHOT`，Java 17，JUnit 5.10.2。
+- Maven 坐标 `io.github.pandong2015:ffmpeg4j-core:1.0.0`（已发布至 Maven Central），Java 17，JUnit 5.10.2。
 - 许可证 **Apache-2.0**（`LICENSE` 全文 + `NOTICE` 归属声明）；本库仅子进程调用 ffmpeg 二进制、不链接 libav*，独立于 ffmpeg 的 GPL/LGPL。
 - JaCoCo 覆盖率报告（report-only，不设失败阈值）；`maven-source-plugin` / `maven-javadoc-plugin` 生成 sources/javadoc jar。
 - 测试：单元 + 离线 argv 断言 + 真机 E2E（缺 ffmpeg/构建开关时 `assumeTrue` 跳过而非失败）。
@@ -60,8 +60,8 @@
 - 版本 < 4.2 仅告警不硬失败。
 - 不含帧进出 JVM（预留 `ffmpeg4j-frame`）、硬件加速、HLS/DASH、字幕高级样式的一等支持（靠逃生舱兜底）。
 
-### 待定
+### 发布
 
-- 正式 release 由维护者手动去 SNAPSHOT + 签名部署（`pom.xml` 的 `<scm>`/`<url>` 仍为占位，建仓后回填真实地址）。
+- **1.0.0** 已 GPG 签名并部署至 **Maven Central**（2026-07-14）；`pom.xml` 的 `<scm>`/`<url>` 已为真实仓库地址。
 
 [1.0.0]: https://github.com/pandong2015/ffmpeg4j/releases/tag/v1.0.0

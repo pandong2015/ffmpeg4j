@@ -1,5 +1,6 @@
 # ffmpeg4j
 
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.pandong2015/ffmpeg4j-core.svg?label=Maven%20Central)](https://central.sonatype.com/artifact/io.github.pandong2015/ffmpeg4j-core)
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)
 ![java](https://img.shields.io/badge/Java-17%2B-orange.svg)
 ![spring boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen.svg)
@@ -40,12 +41,18 @@
 | 核心库 | `io.github.pandong2015:ffmpeg4j-core` | 普通 Java 项目 |
 | Spring Boot Starter | `io.github.pandong2015:ffmpeg4j-spring-boot-starter` | Spring Boot 3.x（传递引入 core） |
 
+已发布至 **[Maven Central](https://central.sonatype.com/artifact/io.github.pandong2015/ffmpeg4j-core)**，无需额外仓库配置。当前版本 **`1.0.0`**。
+
 ```xml
 <dependency>
     <groupId>io.github.pandong2015</groupId>
     <artifactId>ffmpeg4j-core</artifactId>            <!-- 或 ffmpeg4j-spring-boot-starter -->
-    <version>1.0.0-SNAPSHOT</version>
+    <version>1.0.0</version>
 </dependency>
+```
+```kotlin
+// Gradle (Kotlin DSL)
+implementation("io.github.pandong2015:ffmpeg4j-core:1.0.0")
 ```
 
 **前置**：Java 17+；目标机预装 `ffmpeg`/`ffprobe`（建议 ≥ 4.2，低于仅告警不硬失败；缺失才硬错）。烧字幕/打字幕需 ffmpeg 带 `--enable-libass`/`--enable-libfreetype`（缺失时下发命令前提前诊断报错）。二进制发现顺序：系统属性 → 环境变量 → `PATH`（详见 [USAGE.md](./USAGE.md#14-二进制发现与配置)）。
