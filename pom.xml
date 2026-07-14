@@ -33,7 +33,6 @@
     </developers>
 
     <scm>
-        <!-- 无 git remote，暂以 github.com/pandong2015/ffmpeg4j 占位；建仓后更新为真实地址。 -->
         <connection>scm:git:https://github.com/pandong2015/ffmpeg4j.git</connection>
         <developerConnection>scm:git:git@github.com:pandong2015/ffmpeg4j.git</developerConnection>
         <url>https://github.com/pandong2015/ffmpeg4j</url>
