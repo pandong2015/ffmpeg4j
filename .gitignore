@@ -1,6 +1,7 @@
 # --- Tooling / local state (generated, not for version control) ---
 .codegraph/
 .omc/
+.claude/
 
 # --- Java / Maven build artifacts ---
 target/
