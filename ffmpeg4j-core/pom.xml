@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.github.pandong2015</groupId>
         <artifactId>ffmpeg4j-parent</artifactId>
-        <version>1.0.0-SNAPSHOT</version>
+        <version>1.0.0</version>
     </parent>
 
     <!-- 坐标保持不变：io.github.pandong2015:ffmpeg4j-core（老用户升级无感）。 -->
@@ -40,14 +40,7 @@
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
             </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-source-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-javadoc-plugin</artifactId>
-            </plugin>
+            <!-- sources/javadoc jar 由父 POM 的 release profile 统一提供（三模块发布时一并生成），平时 build 不触发。 -->
         </plugins>
     </build>
 </project>
