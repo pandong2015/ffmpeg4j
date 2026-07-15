@@ -124,6 +124,16 @@ public final class Ffmpeg {
         return defaultClient().burnSubtitles(video, subtitle, out, options);
     }
 
+    // ===== 9. hlsSegment（单码率 VOD 切片 + 可选 AES-128）=====
+
+    public static HlsResult hlsSegment(File in, File outDir) {
+        return defaultClient().hlsSegment(in, outDir);
+    }
+
+    public static HlsResult hlsSegment(File in, File outDir, HlsOptions options) {
+        return defaultClient().hlsSegment(in, outDir, options);
+    }
+
     // ===== 8. probe =====
 
     /**

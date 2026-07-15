@@ -2,6 +2,26 @@
 
 本文件记录 ffmpeg4j 各版本的显著变更。遵循「新增 / 变更 / 修复」分类，日期采用 ISO 8601。
 
+## [1.3.0] - 2026-07-15
+
+新增 **HLS 单码率 VOD 切片门面**（可选 AES-128）与**通用按秒强制关键帧**能力。纯 additive，既有 argv 逐字节不变，core 仍零重型依赖（AES 随机仅用 JDK `SecureRandom`）。HLS/AES 行为在 ffmpeg 8.0.1 实测验证；4.2 为支持下限但未单独验证。
+
+### 新增
+
+**L4 HLS 切片门面（第 9 个动作门面）**
+- `Ffmpeg.hlsSegment(File in, File outDir[, HlsOptions])` 与 `FfmpegClient` 对称实例 + `hlsSegmentAsync`（返回 `CompletableFuture<HlsResult>`）。产物三分离布局：`outDir/index.m3u8` + `outDir/ts/*.ts` + 启用 AES 时 `outDir/key/enc.key`。默认 `-c copy`；VOD 双标签（`-hls_playlist_type vod`/`-hls_list_size 0`）内部固定注入。
+- 段 URI 前缀经**默认注入 `-hls_base_url <segmentDir>/`** 保证（ffmpeg 单播放列表对段 URI 取 basename、不隐式相对化——8.0.1 实测）；`HlsOptions.segmentUriPrefix` 覆盖之。
+- `HlsResult`（record）：`segments` 由**解析写出的 m3u8** 得到（有序、免疫 `-y` 孤儿段），不 glob 目录。
+- `HlsOptions`（不可变 wither）：`hlsTime`（默认 8.0）/`playlistName`/`segmentDir`/`segmentTemplate`/`keyDir`/`keyFileName`/`startNumber`/`videoCodec`/`audioCodec`（默认 copy）/`key`/`alignKeyframes`/`segmentUriPrefix`/`cleanSegmentDir`/`extraOutputArgs` + `onProgress`/`timeout`。
+
+**AES-128（责任模型 B2 默认 / B1 便利）**
+- `HlsKey.of(byte[16], keyUri[, iv])`（B2：调用方持机密）、`HlsKey.random(keyUri)`（B1：JDK `SecureRandom`）。单个 `enc.key` + 临时 key_info_file 覆盖全档，二者以 `0600` 原子创建；临时文件 `finally` 删、失败/取消清理孤儿明文密钥。key URI **明文进 m3u8**（勿内嵌凭证）。`ErrorPatterns` 增补 `Invalid key size`/加密不可用的可读诊断。
+
+**通用按秒强制关键帧**
+- `TranscodeOptions.forceKeyframesEverySeconds(double)` → `-force_key_frames expr:gte(t,n_forced*T)`，与帧基 `gop(int)` **互补共存**；单一渲染器 `FacadeSupport.forceKeyFramesArgs`。`force_key_frames` 必然重编码，与 `-c:v copy` 冲突时 build 期 fail-fast。HLS 侧以 `HlsOptions.alignKeyframes(boolean)`（T=hlsTime）复用。
+
+> **边界**：多码率梯（ABR）/fMP4/live/密钥轮换均出界，走 `extraOutputArgs`；ABR 为已确认的独立后续变更（`add-hls-abr-ladder`）。
+
 ## [1.2.0] - 2026-07-15
 
 本次发布合并两批纯 additive 能力：面向下游 `ocs-media-task` 的 **P0 能力补齐** 与 type1 转码的 **滤镜链/码控能力（P1）**。默认行为逐字节不变，core 仍零重型依赖。

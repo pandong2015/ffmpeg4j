@@ -131,7 +131,9 @@ double seconds = Ffmpeg.probe(new File("in.mp4")).durationSeconds();
 
 ---
 
-## 5. 九个门面
+## 5. 十个门面
+
+（九个动作门面 + `probe`。）
 
 | 门面 | 便捷签名 | 说明 |
 |------|----------|------|
@@ -143,9 +145,23 @@ double seconds = Ffmpeg.probe(new File("in.mp4")).durationSeconds();
 | `gif` | `gif(in, out)` | 两遍调色板法生成 GIF（编译器自动 `split` 菱形） |
 | `concat` | `concat(List<File> ins, out)` | 前置归一化（含 setsar）+ 异构流集合注入静音/纯色或可诊断拒绝 |
 | `burnSubtitles` | `burnSubtitles(video, subtitle, out)` | 硬字幕烧录（需 libass） |
+| `hlsSegment` | `hlsSegment(in, outDir) → HlsResult` | 单码率 VOD HLS 切片（可选 AES-128）；产 `outDir/index.m3u8` + `ts/*.ts`（+ `key/enc.key`）。默认 `-c copy`；`alignKeyframes` 转码对齐段边界 |
 | `probe` | `probe(in) → ProbeResult` | 结构化元数据（无 Options 重载） |
 
 ```java
+// HLS 单码率 VOD 切片（直拷，快）
+HlsResult r = Ffmpeg.hlsSegment(new File("in.mp4"), new File("out"));
+// → out/index.m3u8 + out/ts/index0.ts...；r.segments() 为有序段路径
+
+// 带 AES-128（B2：调用方持密钥；key URI 明文进 m3u8，勿内嵌凭证）
+Ffmpeg.hlsSegment(new File("in.mp4"), new File("out"),
+        HlsOptions.defaults().key(HlsKey.of(keyBytes16, "https://keys.example/s.key")));
+// 或 B1 便利：HlsKey.random("https://keys.example/s.key")（SecureRandom 16 字节，字节可读回）
+
+// 均匀段（转码 + 关键帧对齐）；通用按秒关键帧亦可用于 transcode：
+Ffmpeg.hlsSegment(new File("in.mp4"), new File("out"),
+        HlsOptions.defaults().videoCodec("libx264").hlsTime(6.0).alignKeyframes(true));
+
 // 拼接多段
 Ffmpeg.concat(List.of(new File("a.mp4"), new File("b.mp4")), new File("joined.mp4"));
 

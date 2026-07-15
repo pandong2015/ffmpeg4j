@@ -1,9 +1,11 @@
 package io.github.pandong2015.ffmpeg4j.facade;
 
 import java.io.File;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
 
@@ -129,6 +131,14 @@ final class FacadeSupport {
             args.add("-sc_threshold");
             args.add("0");
         }
+        if (o.forceKeyframesEverySeconds() != null) {
+            // 按秒强制关键帧必然重编码，与 -c:v copy 冲突：build 期 fail-fast（不隐式改 codec）。
+            if ("copy".equals(o.videoCodec())) {
+                throw new FfmpegException(
+                        "关键帧强制（forceKeyframesEverySeconds）需重编码，与 -c:v copy 冲突：请设 videoCodec（非 copy）", null);
+            }
+            args.addAll(forceKeyFramesArgs(o.forceKeyframesEverySeconds()));
+        }
         // 逃生舱：置于类型化码控之后（同键 ffmpeg 取后者）；内容不参与类型校验。
         args.addAll(o.extraOutputArgs());
 
@@ -144,6 +154,89 @@ final class FacadeSupport {
                     .withArgs(args.toArray(new String[0]));
         }
         return new GraphCompiler().compile(output);
+    }
+
+    // ===== HLS 单码率 VOD 切片（纯函数产 argv；写盘/解析在 FfmpegClient）=====
+
+    /**
+     * 构建单码率 VOD HLS 的 argv（纯函数、脱进程可断言）。段与 playlist 分离布局：playlist 落 outDir 根、段落
+     * {@code outDir/segmentDir/}；段 URI 前缀经<b>默认注入 {@code -hls_base_url <segmentDir>/}</b> 保证（ffmpeg 单播放
+     * 列表对段 URI 取 basename、不隐式相对化），{@code segmentUriPrefix} 覆盖之。{@code keyInfoFile} 路径由门面先定
+     * 并传入（本函数不建文件）；AES 启用时接线 {@code -hls_key_info_file}。视频/音频用可选映射（首视频+首音频）。
+     */
+    static CompiledCommand buildHls(File in, File outDir, HlsOptions o, Path keyInfoFile) {
+        Objects.requireNonNull(outDir, "outDir 不能为 null");
+        Input input = Input.of(in);
+        List<String> args = new ArrayList<>();
+        args.add("-c:v");
+        args.add(o.videoCodec());
+        args.add("-c:a");
+        args.add(o.audioCodec());
+        if (o.alignKeyframes()) {
+            // 段对齐需重编码，与 -c:v copy 冲突：build 期 fail-fast（不隐式改 codec）。
+            if ("copy".equals(o.videoCodec())) {
+                throw new FfmpegException(
+                        "alignKeyframes 需重编码，与 -c:v copy 冲突：请设 videoCodec（非 copy）", null);
+            }
+            args.addAll(forceKeyFramesArgs(o.hlsTime()));
+        }
+        args.add("-f");
+        args.add("hls");
+        args.add("-hls_time");
+        args.add(num(o.hlsTime()));
+        // VOD 语义双标签固定注入（缺 playlist_type 不写 ENDLIST、缺 list_size 0 只留 5 段）。
+        args.add("-hls_playlist_type");
+        args.add("vod");
+        args.add("-hls_list_size");
+        args.add("0");
+        args.add("-hls_segment_type");
+        args.add("mpegts");
+        if (o.startNumber() != 0) {
+            args.add("-start_number");
+            args.add(Integer.toString(o.startNumber()));
+        }
+        args.add("-hls_segment_filename");
+        args.add(new File(new File(outDir, o.segmentDir()), o.segmentTemplate()).getPath());
+        args.add("-hls_base_url");
+        args.add(o.segmentUriPrefix() != null ? o.segmentUriPrefix() : o.segmentDir() + "/");
+        if (o.key() != null) {
+            Objects.requireNonNull(keyInfoFile, "启用 AES 时 keyInfoFile 路径不能为 null");
+            args.add("-hls_key_info_file");
+            args.add(keyInfoFile.toString());
+        }
+        // 逃生舱：置于类型化 -hls_* 之后（同键 ffmpeg 取后者）；内容不参与类型校验。
+        args.addAll(o.extraOutputArgs());
+
+        Output output = Output.to(new File(outDir, o.playlistName()), input.videoOptional(), input.audioOptional())
+                .withArgs(args.toArray(new String[0]));
+        return new GraphCompiler().compile(output);
+    }
+
+    /**
+     * 从 m3u8 正文解析各分段的 <em>basename</em>（{@code #} 注释与空行外的 URI 行，按出现顺序）。纯函数、可单测。
+     * 取 basename 使其对默认 {@code -hls_base_url <segmentDir>/}（如 {@code ts/index0.ts}）与 CDN 绝对前缀
+     * （如 {@code https://cdn/index0.ts}）均得段文件名，门面再解析到 {@code outDir/segmentDir/} 下的实际路径。
+     */
+    static List<String> parseSegmentBasenames(String m3u8Content) {
+        List<String> result = new ArrayList<>();
+        for (String line : parseSegmentUris(m3u8Content)) {
+            int slash = Math.max(line.lastIndexOf('/'), line.lastIndexOf('\\'));
+            result.add(slash >= 0 ? line.substring(slash + 1) : line);
+        }
+        return result;
+    }
+
+    /** m3u8 中<em>原始</em>段 URI 行（{@code #} 注释与空行外，按出现顺序）——保留 base_url 前缀（如 {@code ts/index0.ts}）。 */
+    static List<String> parseSegmentUris(String m3u8Content) {
+        List<String> result = new ArrayList<>();
+        for (String raw : m3u8Content.split("\n")) {
+            String line = raw.strip();
+            if (line.isEmpty() || line.startsWith("#")) {
+                continue;
+            }
+            result.add(line);
+        }
+        return result;
     }
 
     // ===== 2. remux（换容器，按流分派 -c copy / 字幕特判）=====
@@ -451,5 +544,13 @@ final class FacadeSupport {
             return Long.toString((long) d);
         }
         return Double.toString(d);
+    }
+
+    /**
+     * 按秒强制关键帧的输出 argv：{@code -force_key_frames expr:gte(t,n_forced*T)}（{@code T} 经 {@link #num}
+     * locale 无关、去尾零渲染）。纯函数、单一真源，供 transcode 与 HLS（段边界对齐）复用。调用方保证 {@code seconds>0}。
+     */
+    static List<String> forceKeyFramesArgs(double seconds) {
+        return List.of("-force_key_frames", "expr:gte(t,n_forced*" + num(seconds) + ")");
     }
 }

@@ -58,6 +58,17 @@ final class ErrorPatterns {
                     "odd-dimensions",
                     "(width|height) not divisible by 2",
                     "尺寸不能被 2 整除（yuv420p 的 H.264/HEVC 要求宽高为偶数）"),
+
+            // —— HLS/AES 加密（本变更卖点，置于通用 errno 之前，避免 reason=null）—— //
+            ErrorPattern.of(
+                    "hls-invalid-key-size",
+                    "Invalid key size",
+                    "AES 密钥长度非法（HLS AES-128 密钥须为 16 字节原始字节）"),
+            ErrorPattern.of(
+                    "hls-encryption-unavailable",
+                    "Encryption not supported|not built with (openssl|gnutls)|"
+                            + "(openssl|gnutls)[^\\n]*(not found|not available|unavailable)",
+                    "当前 ffmpeg 构建不支持加密（HLS AES 需 --enable-openssl 或 --enable-gnutls）"),
             ErrorPattern.of(
                     "codec-container-incompatible",
                     "codec not currently supported in container|Could not find tag for codec",

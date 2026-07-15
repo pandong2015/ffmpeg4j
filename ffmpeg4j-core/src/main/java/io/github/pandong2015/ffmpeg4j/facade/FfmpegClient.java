@@ -1,6 +1,9 @@
 package io.github.pandong2015.ffmpeg4j.facade;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -12,6 +15,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
+import io.github.pandong2015.ffmpeg4j.FfmpegException;
 import io.github.pandong2015.ffmpeg4j.compiler.CompiledCommand;
 import io.github.pandong2015.ffmpeg4j.engine.FfmpegExecutor;
 import io.github.pandong2015.ffmpeg4j.engine.FfmpegRun;
@@ -23,8 +27,8 @@ import io.github.pandong2015.ffmpeg4j.probe.MediaProbe;
 import io.github.pandong2015.ffmpeg4j.probe.ProbeResult;
 
 /**
- * 可实例化的 L4 门面：承载与静态 {@link Ffmpeg} 相同的 8 个一行式（transcode/remux/clip/extractAudio/
- * thumbnail/concat/burnSubtitles/probe），但以<em>注入</em>的 {@link FfmpegEnvironment} 执行、以构造时的
+ * 可实例化的 L4 门面：承载与静态 {@link Ffmpeg} 相同的 9 个动作门面（transcode/remux/clip/extractAudio/
+ * thumbnail/gif/concat/burnSubtitles/hlsSegment）+ probe，但以<em>注入</em>的 {@link FfmpegEnvironment} 执行、以构造时的
  * 默认 {@link RunOptions} 为基线——因此可作为普通 bean 被 Spring 容器注入并按 {@code application.yml} 配置。
  *
  * <p>与静态门面的关系：静态 {@link Ffmpeg} 各方法委托给一个以 {@link FfmpegEnvironment#shared()} 与
@@ -249,6 +253,86 @@ public class FfmpegClient {
         }, eff(options.timeout(), options.onProgress()));
     }
 
+    // ===== 9. hlsSegment（单码率 VOD 切片 + 可选 AES-128）=====
+
+    public HlsResult hlsSegment(File in, File outDir) {
+        return hlsSegment(in, outDir, HlsOptions.defaults());
+    }
+
+    /**
+     * 单码率 VOD HLS 切片：产 {@code outDir/index.m3u8} + {@code outDir/ts/*.ts}（+ 启用 AES 时
+     * {@code outDir/key/enc.key}）。默认 {@code -c copy}；写盘/清理副作用隔离于此（{@code buildHls} 纯函数）。
+     *
+     * <p><b>失败/取消语义</b>：内嵌 {@code run.exitCode()!=0}（取消 255）或 0 段时抛 {@link FfmpegException}、
+     * 不返回成功态；任何失败路径都清理孤儿明文 {@code enc.key} 与临时 key_info_file。
+     */
+    public HlsResult hlsSegment(File in, File outDir, HlsOptions options) {
+        HlsPrep p = null;
+        boolean success = false;
+        try {
+            p = prepareHls(in, outDir, options);
+            RunResult run = FacadeSupport.execute(p.cmd, env, eff(options.timeout(), options.onProgress()));
+            HlsResult result = finishHls(p, run);
+            success = true;
+            return result;
+        } catch (IOException e) {
+            throw new FfmpegException("HLS 切片 IO 失败：" + e.getMessage(), e);
+        } finally {
+            cleanupHls(p, success);
+        }
+    }
+
+    public CompletableFuture<HlsResult> hlsSegmentAsync(File in, File outDir) {
+        return hlsSegmentAsync(in, outDir, HlsOptions.defaults());
+    }
+
+    /**
+     * {@link #hlsSegment} 的异步变体。因 HLS 有写盘/清理副作用且返回 {@link HlsResult}，<em>不</em>复用
+     * {@code executeAsync}（其无 finally、返回 {@link RunResult}）——本方法带 {@code try/finally} 的专用异步骨架，
+     * 全程在 {@code asyncExecutor} 线程：写盘 → runAsync → await → 解析 m3u8 装配 → finally 清理临时/孤儿文件；
+     * 对返回句柄 {@code cancel} 会转达优雅取消阶梯给底层 {@link FfmpegRun}。
+     */
+    public CompletableFuture<HlsResult> hlsSegmentAsync(File in, File outDir, HlsOptions options) {
+        RunOptions ro = eff(options.timeout(), options.onProgress());
+        AtomicReference<FfmpegRun> runRef = new AtomicReference<>();
+        CompletableFuture<HlsResult> future = new CompletableFuture<>() {
+            @Override
+            public boolean cancel(boolean mayInterruptIfRunning) {
+                FfmpegRun run = runRef.get();
+                if (run != null) {
+                    run.cancel();
+                }
+                return super.cancel(mayInterruptIfRunning);
+            }
+        };
+        asyncExecutor.execute(() -> {
+            if (future.isCancelled()) {
+                return;
+            }
+            HlsPrep p = null;
+            boolean success = false;
+            try {
+                p = prepareHls(in, outDir, options);
+                FfmpegRun run = new FfmpegExecutor(env).runAsync(p.cmd, ro);
+                runRef.set(run);
+                if (future.isCancelled()) {
+                    run.cancel();
+                    return;
+                }
+                HlsResult result = finishHls(p, run.await());
+                success = true;
+                future.complete(result);
+            } catch (IOException e) {
+                future.completeExceptionally(new FfmpegException("HLS 切片 IO 失败：" + e.getMessage(), e));
+            } catch (Throwable t) {
+                future.completeExceptionally(t);
+            } finally {
+                cleanupHls(p, success);
+            }
+        });
+        return future;
+    }
+
     // ===== 8. probe =====
 
     /** 探测媒体文件的容器与流信息，走本实例 {@code env} 配置的 {@code ffprobe}（无 Options 重载）。 */
@@ -281,6 +365,71 @@ public class FfmpegClient {
     /** 把调用点 timeout/onProgress 合并到默认 RunOptions 之上。 */
     private RunOptions eff(Duration timeout, Consumer<Progress> onProgress) {
         return FacadeSupport.runOptions(defaultRunOptions, timeout, onProgress);
+    }
+
+    // ===== 内部：HLS 副作用（写盘/解析/清理），与纯函数 buildHls 分层 =====
+
+    /** 一次 HLS run 的准备产物：命令 + 临时/密钥文件 + 待解析的 playlist/段目录。 */
+    private static final class HlsPrep {
+        final CompiledCommand cmd;
+        final Path keyInfoFile; // 临时（无 AES 时 null）
+        final Path keyFile;     // 持久密钥（无 AES 时 null）
+        final Path playlist;
+        final Path segmentDir;
+
+        HlsPrep(CompiledCommand cmd, Path keyInfoFile, Path keyFile, Path playlist, Path segmentDir) {
+            this.cmd = cmd;
+            this.keyInfoFile = keyInfoFile;
+            this.keyFile = keyFile;
+            this.playlist = playlist;
+            this.segmentDir = segmentDir;
+        }
+    }
+
+    /** mkdir 子目录、（可选清空）、写密钥/临时 key_info_file、构建纯函数 argv。 */
+    private HlsPrep prepareHls(File in, File outDir, HlsOptions o) throws IOException {
+        Objects.requireNonNull(outDir, "outDir");
+        Path outDirPath = outDir.toPath();
+        Path segmentDir = outDirPath.resolve(o.segmentDir());
+        Files.createDirectories(segmentDir);
+        if (o.cleanSegmentDir()) {
+            HlsIo.cleanSegments(segmentDir);
+        }
+        Path keyInfoFile = null;
+        Path keyFile = null;
+        if (o.key() != null) {
+            Path keyDir = outDirPath.resolve(o.keyDir());
+            Files.createDirectories(keyDir);
+            keyFile = keyDir.resolve(o.keyFileName());
+            HlsIo.writeKeyFile(keyFile, o.key().keyBytes());
+            keyInfoFile = HlsIo.writeKeyInfoFile(o.key().keyInfoFileText(keyFile.toAbsolutePath().toString()));
+        }
+        CompiledCommand cmd = FacadeSupport.buildHls(in, outDir, o, keyInfoFile);
+        return new HlsPrep(cmd, keyInfoFile, keyFile, outDirPath.resolve(o.playlistName()), segmentDir);
+    }
+
+    /** run 后装配：exitCode≠0（含取消 255）或 0 段抛可诊断异常，否则解析 m3u8 得有序段清单。 */
+    private HlsResult finishHls(HlsPrep p, RunResult run) throws IOException {
+        if (run.exitCode() != 0) {
+            throw new FfmpegException(run.exitCode(), run.command(), null,
+                    "HLS 切片未正常完成（退出码 " + run.exitCode() + "，可能被取消/超时收尾）");
+        }
+        List<Path> segments = HlsIo.parseSegments(p.playlist, p.segmentDir);
+        if (segments.isEmpty()) {
+            throw new FfmpegException("HLS 未产出任何分段（检查输入/时长）", null);
+        }
+        return new HlsResult(p.playlist, segments, p.keyFile, run);
+    }
+
+    /** finally 清理：临时 key_info_file 恒删；失败/取消（{@code !success}）时连同孤儿明文 enc.key 一并删。 */
+    private void cleanupHls(HlsPrep p, boolean success) {
+        if (p == null) {
+            return;
+        }
+        HlsIo.deleteQuietly(p.keyInfoFile);
+        if (!success) {
+            HlsIo.deleteQuietly(p.keyFile);
+        }
     }
 
     /**
