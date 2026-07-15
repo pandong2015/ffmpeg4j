@@ -120,6 +120,9 @@ Ffmpeg.extractAudio(new File("in.mp4"), new File("audio.m4a"));
 // 第 5 秒抓一帧
 Ffmpeg.thumbnail(new File("in.mp4"), new File("thumb.jpg"), 5.0);
 
+// 生成 GIF（两遍调色板法，默认 fps=15）
+Ffmpeg.gif(new File("in.mp4"), new File("out.gif"));
+
 // 探测元数据
 double seconds = Ffmpeg.probe(new File("in.mp4")).durationSeconds();
 ```
@@ -128,15 +131,16 @@ double seconds = Ffmpeg.probe(new File("in.mp4")).durationSeconds();
 
 ---
 
-## 5. 八个门面
+## 5. 九个门面
 
 | 门面 | 便捷签名 | 说明 |
 |------|----------|------|
 | `transcode` | `transcode(in, out, videoCodec, audioCodec)` | 强制转码 |
 | `remux` | `remux(in, out)` | 换容器，尽量不重编码；文本字幕转 `mov_text`、图形字幕丢弃 |
 | `clip` | `clip(in, out, startSec, endSec)` | 无歧义 `-ss start -t (end-start)` 截取 |
-| `extractAudio` | `extractAudio(in, out)` | 按扩展名推导是否重编码，`-map 0:a` 避开封面图 |
-| `thumbnail` | `thumbnail(in, out, atSec)` | 指定时间点抓帧 |
+| `extractAudio` | `extractAudio(in, out)` | 按扩展名推导是否重编码，`-map 0:a` 避开封面图；可选 `-ar`/`-ac` |
+| `thumbnail` | `thumbnail(in, out, atSec)` | 指定时间点抓帧；`seekMode` 可选输入侧快 seek / 输出侧精确 |
+| `gif` | `gif(in, out)` | 两遍调色板法生成 GIF（编译器自动 `split` 菱形） |
 | `concat` | `concat(List<File> ins, out)` | 前置归一化（含 setsar）+ 异构流集合注入静音/纯色或可诊断拒绝 |
 | `burnSubtitles` | `burnSubtitles(video, subtitle, out)` | 硬字幕烧录（需 libass） |
 | `probe` | `probe(in) → ProbeResult` | 结构化元数据（无 Options 重载） |
@@ -147,6 +151,18 @@ Ffmpeg.concat(List.of(new File("a.mp4"), new File("b.mp4")), new File("joined.mp
 
 // 烧录字幕（需 ffmpeg 带 --enable-libass）
 Ffmpeg.burnSubtitles(new File("video.mp4"), new File("subs.srt"), new File("hardsub.mp4"));
+
+// GIF：截取 0~3s、320 宽、10fps
+Ffmpeg.gif(new File("in.mp4"), new File("out.gif"),
+        GifOptions.defaults().start(0).duration(3).fps(10).width(320));
+
+// 抽音频为 16k 单声道 WAV（ASR 前置；自动禁用 copy 以真正重采样）
+Ffmpeg.extractAudio(new File("in.mp4"), new File("asr.wav"),
+        ExtractAudioOptions.defaults().sampleRate(16000).channels(1));
+
+// 精确时间点抓帧（输出侧 seek）
+Ffmpeg.thumbnail(new File("in.mp4"), new File("frame.png"), 12.5,
+        ThumbnailOptions.defaults().seekMode(SeekMode.OUTPUT_ACCURATE));
 ```
 
 ---
@@ -172,7 +188,10 @@ Ffmpeg.transcode(new File("in.mp4"), new File("out.mp4"), opts);
 ```
 
 各门面对应 `TranscodeOptions` / `RemuxOptions` / `ClipOptions` / `ExtractAudioOptions` / `ThumbnailOptions` /
-`ConcatOptions` / `BurnSubtitlesOptions`，均含各自的特定项与执行侧的 `onProgress` / `timeout`。
+`GifOptions` / `ConcatOptions` / `BurnSubtitlesOptions`，均含各自的特定项与执行侧的 `onProgress` / `timeout`。
+特定项举例：`ExtractAudioOptions.sampleRate/channels`（`-ar`/`-ac`，设定即禁用 copy）、
+`ThumbnailOptions.seekMode`（`INPUT_FAST` 默认 / `OUTPUT_ACCURATE` 精确）、
+`GifOptions.start/duration/fps/width/height/scaleFlags`。
 
 ---
 
@@ -227,7 +246,11 @@ for (StreamInfo a : probe.audioStreams()) {
 `ProbeResult`：`format()` / `streams()` / `streams(MediaType)` / `videoStreams()` / `audioStreams()` /
 `subtitleStreams()` / `durationSeconds()`。
 `StreamInfo`（record）：`index` / `type` / `codecName` / `codecLongName` / `width` / `height` /
-`sampleRate` / `channels` + `isVideo()/isAudio()/isSubtitle()` + `avgFrameRateFps()/rFrameRateFps()`。
+`sampleRate` / `channels`，以及扩展字段 `profile` / `codecTag` / `pixelFormat` / `level` / `hasBFrames` /
+`sampleFormat` / `channelLayout` / `timeBase` / `startTimeSeconds` / `durationSeconds` / `bitRate` /
+`nbFrames` / `sampleAspectRatio` / `displayAspectRatio` / `attachedPic`（封面图流）/ `language`
+（视频/音频专属字段在另一类型上为 `null`）+ `isVideo()/isAudio()/isSubtitle()` + `avgFrameRateFps()/rFrameRateFps()`。
+`FormatInfo` 另含 `nbPrograms` / `startTimeSeconds`。
 
 失败路径（文件不存在 / 非法媒体）抛携 ffprobe 失败信息的 `FfmpegException`。
 

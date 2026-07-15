@@ -137,6 +137,136 @@ class MediaProbeTest {
     }
 
     // ---------------------------------------------------------------------
+    // P0-4 扩展字段：以贴近真实 ffprobe 8.0.1 -show_streams/-show_format 的样本锚定。
+    // 含视频画质字段、音频采样格式、SAR/DAR、嵌套 disposition/tags、封面图流。
+    // ---------------------------------------------------------------------
+
+    private static final String EXTENDED_JSON = """
+            {
+              "streams": [
+                {
+                  "index": 0, "codec_name": "h264", "codec_type": "video",
+                  "profile": "High", "codec_tag_string": "avc1",
+                  "width": 320, "height": 240, "has_b_frames": 2,
+                  "sample_aspect_ratio": "1:1", "display_aspect_ratio": "4:3",
+                  "pix_fmt": "yuv420p", "level": 31,
+                  "r_frame_rate": "25/1", "avg_frame_rate": "25/1", "time_base": "1/12800",
+                  "start_time": "0.000000", "duration": "2.000000",
+                  "bit_rate": "284952", "nb_frames": "50",
+                  "disposition": { "default": 1, "attached_pic": 0 },
+                  "tags": { "language": "und" }
+                },
+                {
+                  "index": 1, "codec_name": "aac", "codec_type": "audio",
+                  "profile": "LC", "codec_tag_string": "mp4a",
+                  "sample_fmt": "fltp", "sample_rate": "44100", "channels": 2,
+                  "channel_layout": "stereo", "time_base": "1/44100",
+                  "start_time": "0.000000", "duration": "2.000000",
+                  "bit_rate": "127891", "nb_frames": "88",
+                  "tags": { "language": "eng" }
+                },
+                {
+                  "index": 2, "codec_name": "mjpeg", "codec_type": "video",
+                  "pix_fmt": "yuvj420p",
+                  "disposition": { "attached_pic": 1 }
+                }
+              ],
+              "format": {
+                "filename": "sample.mp4", "nb_streams": 3, "nb_programs": 0,
+                "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+                "start_time": "0.000000", "duration": "2.000000",
+                "size": "106581", "bit_rate": "426324"
+              }
+            }
+            """;
+
+    @Test
+    void mapsVideoExtendedFields() {
+        StreamInfo v = MediaProbe.fromJson(EXTENDED_JSON).videoStreams().get(0);
+        assertEquals("High", v.profile());
+        assertEquals("avc1", v.codecTag());
+        assertEquals(2, v.hasBFrames());
+        assertEquals("yuv420p", v.pixelFormat());
+        assertEquals(31, v.level());
+        assertEquals("1/12800", v.timeBase());
+        assertEquals(0.0, v.startTimeSeconds(), 1e-9);
+        assertEquals(2.0, v.durationSeconds(), 1e-9);
+        assertEquals(284952L, v.bitRate());
+        assertEquals(50L, v.nbFrames());
+        assertEquals("1:1", v.sampleAspectRatio());
+        assertEquals("4:3", v.displayAspectRatio());
+        // 视频流无音频专属字段
+        assertNull(v.sampleFormat());
+        assertNull(v.channelLayout());
+    }
+
+    @Test
+    void mapsAudioExtendedFields() {
+        StreamInfo a = MediaProbe.fromJson(EXTENDED_JSON).audioStreams().get(0);
+        assertEquals("LC", a.profile());
+        assertEquals("fltp", a.sampleFormat());
+        assertEquals("stereo", a.channelLayout());
+        assertEquals(127891L, a.bitRate());
+        assertEquals(88L, a.nbFrames());
+        // 音频流无视频专属字段
+        assertNull(a.pixelFormat());
+        assertNull(a.hasBFrames());
+        assertNull(a.level());
+    }
+
+    @Test
+    void mapsFormatExtendedFields() {
+        FormatInfo f = MediaProbe.fromJson(EXTENDED_JSON).format();
+        assertEquals(0, f.nbPrograms());
+        assertEquals(0.0, f.startTimeSeconds(), 1e-9);
+    }
+
+    @Test
+    void mapsAttachedPicFromNestedDisposition() {
+        List<StreamInfo> videos = MediaProbe.fromJson(EXTENDED_JSON).videoStreams();
+        // 首条真实视频流 attached_pic=0，第二条封面图 mjpeg attached_pic=1
+        assertFalse(videos.get(0).attachedPic());
+        assertTrue(videos.get(1).attachedPic(), "mjpeg 封面图应识别为 attachedPic");
+    }
+
+    @Test
+    void mapsLanguageFromNestedTags() {
+        ProbeResult r = MediaProbe.fromJson(EXTENDED_JSON);
+        assertEquals("und", r.videoStreams().get(0).language());
+        assertEquals("eng", r.audioStreams().get(0).language());
+    }
+
+    @Test
+    void twoAudioTracksBothPreservedNotOverwritten() {
+        // DG-3：多音轨以分组 List 逐轨保留，不以单键覆盖。
+        String twoAudio = """
+                { "streams": [
+                    { "index": 0, "codec_name": "aac", "codec_type": "audio",
+                      "channels": 2, "tags": { "language": "eng" } },
+                    { "index": 1, "codec_name": "ac3", "codec_type": "audio",
+                      "channels": 6, "tags": { "language": "chi" } }
+                  ], "format": { "nb_streams": 2 } }
+                """;
+        List<StreamInfo> audios = MediaProbe.fromJson(twoAudio).audioStreams();
+        assertEquals(2, audios.size(), "两条音轨都应保留");
+        assertEquals("eng", audios.get(0).language());
+        assertEquals("chi", audios.get(1).language());
+        assertEquals(2, audios.get(0).channels());
+        assertEquals(6, audios.get(1).channels());
+    }
+
+    @Test
+    void missingNestedFieldsDefaultGracefully() {
+        // 封面图流无 tags → language 为 null；真实视频流 attached_pic=0 → false，不抛
+        StreamInfo cover = MediaProbe.fromJson(EXTENDED_JSON).videoStreams().get(1);
+        assertNull(cover.language(), "无 tags 的流 language 应为 null");
+        // 采样率/声道等音频专属字段在视频流上缺失
+        assertNull(cover.channelLayout());
+        assertEquals(-1L, cover.bitRate(), "缺 bit_rate 应为哨兵 -1");
+        assertEquals(-1L, cover.nbFrames(), "缺 nb_frames 应为哨兵 -1");
+    }
+
+    // ---------------------------------------------------------------------
     // 集成测试：需要 PATH 上有 ffmpeg / ffprobe，缺失则跳过而非失败。
     // ---------------------------------------------------------------------
 

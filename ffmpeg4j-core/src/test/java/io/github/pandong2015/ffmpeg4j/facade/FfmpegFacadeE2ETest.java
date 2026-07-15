@@ -2,6 +2,7 @@ package io.github.pandong2015.ffmpeg4j.facade;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.io.TempDir;
 import io.github.pandong2015.ffmpeg4j.engine.RunResult;
 import io.github.pandong2015.ffmpeg4j.env.FfmpegEnvironment;
 import io.github.pandong2015.ffmpeg4j.probe.ProbeResult;
+import io.github.pandong2015.ffmpeg4j.probe.StreamInfo;
 
 /**
  * 端到端集成：以真实 ffmpeg 现场用 {@code -f lavfi} 生成素材，验证 8 个门面整链跑通。
@@ -137,6 +139,46 @@ class FfmpegFacadeE2ETest {
         assertTrue(p.durationSeconds() > 1.0, "时长应约 2s，实际 " + p.durationSeconds());
         assertEquals(320, p.firstVideo().orElseThrow().width());
         assertEquals(240, p.firstVideo().orElseThrow().height());
+    }
+
+    @Test
+    void gif生成合法动图(@TempDir Path tmp) throws Exception {
+        assumeFfmpeg();
+        File src = generateAV(tmp.resolve("src.mp4"), 2);
+        File out = tmp.resolve("out.gif").toFile();
+
+        RunResult r = Ffmpeg.gif(src, out, GifOptions.defaults().fps(10).width(160).duration(1.0));
+        assertEquals(0, r.exitCode());
+        assertNonEmpty(out);
+        // GIF 魔数 "GIF8"
+        byte[] head = Files.readAllBytes(out.toPath());
+        assertTrue(head.length > 6 && head[0] == 'G' && head[1] == 'I' && head[2] == 'F',
+                "输出应为合法 GIF: " + out);
+    }
+
+    @Test
+    void 抽音频重采样为16k单声道(@TempDir Path tmp) throws Exception {
+        assumeFfmpeg();
+        File src = generateAV(tmp.resolve("src.mp4"), 2);
+        File out = tmp.resolve("out.wav").toFile();
+
+        RunResult r = Ffmpeg.extractAudio(src, out,
+                ExtractAudioOptions.defaults().sampleRate(16000).channels(1));
+        assertEquals(0, r.exitCode());
+        assertNonEmpty(out);
+        StreamInfo a = Ffmpeg.probe(out).firstAudio().orElseThrow();
+        assertEquals(16000, a.sampleRate(), "采样率应重采样为 16000");
+        assertEquals(1, a.channels(), "声道应降为 1");
+    }
+
+    @Test
+    void 探测扩展字段含profile与pixelFormat(@TempDir Path tmp) throws Exception {
+        assumeFfmpeg();
+        File src = generateAV(tmp.resolve("src.mp4"), 2);
+
+        StreamInfo v = Ffmpeg.probe(src).firstVideo().orElseThrow();
+        assertNotNull(v.pixelFormat(), "真实视频流应有 pixelFormat");
+        assertTrue(v.durationSeconds() > 1.0, "流时长应约 2s，实际 " + v.durationSeconds());
     }
 
     // ===== helpers =====

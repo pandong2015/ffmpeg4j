@@ -201,9 +201,26 @@ final class FacadeSupport {
                 ? null
                 : probeOrNull.firstAudio().map(StreamInfo::codecName).orElse(null);
         String codec = audioCodecForExtension(ext, sourceAudioCodec);
+        // 请求重采样/改声道时禁用 copy：copy 会静默忽略 -ar/-ac（实测输出仍原采样率且不报错），
+        // 回退到该扩展名的自然编码器（如 m4a/aac→aac）真正重编码，使 -ar/-ac 生效。
+        if (o.resampling() && "copy".equals(codec)) {
+            codec = audioCodecForExtension(ext, null);
+        }
+        List<String> args = new ArrayList<>();
+        args.add("-vn");
+        args.add("-c:a");
+        args.add(codec);
+        if (o.sampleRate() != null) {
+            args.add("-ar");
+            args.add(o.sampleRate().toString());
+        }
+        if (o.channels() != null) {
+            args.add("-ac");
+            args.add(o.channels().toString());
+        }
         Input input = Input.of(in);
         // 用 0:a:0 选首条音轨，避开封面图（封面为 mjpeg 视频流）；-vn 再兜底排除视频。
-        Output output = Output.to(out, input.audio()).withArgs("-vn", "-c:a", codec);
+        Output output = Output.to(out, input.audio()).withArgs(args.toArray(new String[0]));
         return new GraphCompiler().compile(output);
     }
 
@@ -223,7 +240,10 @@ final class FacadeSupport {
     // ===== 5. thumbnail（抓帧）=====
 
     static CompiledCommand buildThumbnail(File in, File out, double atSec, ThumbnailOptions o) {
-        Input input = Input.of(in).withInputArgs("-ss", num(atSec));
+        // INPUT_FAST（默认）：-ss 置于 -i 之前（关键帧快 seek）。
+        // OUTPUT_ACCURATE：-ss 置于输出侧（-i 之后），解码到目标时刻再取帧，时间点精确。
+        boolean accurate = o.seekMode() == SeekMode.OUTPUT_ACCURATE;
+        Input input = accurate ? Input.of(in) : Input.of(in).withInputArgs("-ss", num(atSec));
         VideoStream v = input.video();
         if (o.width() != null || o.height() != null) {
             int w = o.width() != null ? o.width() : -1;
@@ -231,6 +251,10 @@ final class FacadeSupport {
             v = Filters.scale(v, w, h);
         }
         List<String> args = new ArrayList<>();
+        if (accurate) {
+            args.add("-ss");
+            args.add(num(atSec));
+        }
         args.add("-frames:v");
         args.add("1");
         if (o.quality() != null) {
@@ -239,6 +263,33 @@ final class FacadeSupport {
         }
         Output output = Output.to(out, v).withArgs(args.toArray(new String[0]));
         return new GraphCompiler().compile(output);
+    }
+
+    // ===== 5b. gif（两遍调色板：fps→scale→palettegen/paletteuse，编译器自动 split 菱形）=====
+
+    static CompiledCommand buildGif(File in, File out, GifOptions o) {
+        // -ss/-t 均置输入侧（实测输入/输出侧 -t 选帧有别，须对齐 type3 的输入侧）。
+        List<String> inArgs = new ArrayList<>();
+        inArgs.add("-ss");
+        inArgs.add(num(o.start()));
+        if (o.duration() != null) {
+            inArgs.add("-t");
+            inArgs.add(num(o.duration()));
+        }
+        Input input = Input.of(in).withInputArgs(inArgs.toArray(new String[0]));
+        VideoStream v = Filters.fps(input.video(), o.fps());
+        if (o.width() != null) {
+            int w = o.width();
+            int h = o.height() != null ? o.height() : -1;
+            // 缺省无 flags（与 type3 逐字节等价）；显式 scaleFlags 走原始滤镜表达带 flags 的 scale。
+            v = o.scaleFlags() != null
+                    ? Filters.rawFilterVideo(v, "scale=" + w + ":" + h + ":flags=" + o.scaleFlags())
+                    : Filters.scale(v, w, h);
+        }
+        // 同一流 v 同时被 palettegen 与 paletteuse 消费 → 编译器自动插入 split=2 重连（菱形）。
+        VideoStream palette = Filters.paletteGen(v);
+        VideoStream gif = Filters.paletteUse(v, palette);
+        return new GraphCompiler().compile(Output.to(out, gif));
     }
 
     // ===== 6. concat（拼接，前置归一化 + 缺流注入/拒绝）=====

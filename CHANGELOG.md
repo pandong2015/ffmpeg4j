@@ -2,9 +2,32 @@
 
 本文件记录 ffmpeg4j 各版本的显著变更。遵循「新增 / 变更 / 修复」分类，日期采用 ISO 8601。
 
-## [未发布]（1.0.1-SNAPSHOT）
+## [未发布]（面向 1.1.0）
 
-_下一版本的变更记录于此。_
+面向下游 `ocs-media-task` 的 **P0 能力补齐**（纯 additive、默认行为逐字节不变、core 仍零重型依赖）。
+
+### 新增
+
+**L4 门面 —— GIF 生成（第 9 个门面）**
+- `Ffmpeg.gif(in, out[, GifOptions])` / `FfmpegClient.gif` + `gifAsync`：两遍调色板法生成 GIF（`fps`→可选 `scale`→`palettegen`/`paletteuse`），主流被两次消费由编译器**自动 `split` 重连**（菱形），产出与手写 type3 命令逐字节等价。
+- `GifOptions`（不可变 wither）：`start`（默认 0）/`fps`（默认 15）/`duration`/`width`（未设不加 scale）/`height`/`scaleFlags`（缺省无 flags，可选 `lanczos`）。`-ss`/`-t` 均置输入侧。
+
+**L3 curated 滤镜 —— 调色板族**
+- `Filters.paletteGen(VideoStream)`（1 入 1 出）与 `Filters.paletteUse(VideoStream video, VideoStream palette)`（2 入 1 出，输入序 `[video][palette]`，与 `overlay` 同构）。curated 滤镜自 16 增至 18。
+
+**extractAudio 采样率/声道**
+- `ExtractAudioOptions.sampleRate(int)`→`-ar`、`channels(int)`→`-ac`（正整数校验，ASR 常需 16k 单声道）。设定后**禁用 `-c:a copy`**（copy 会静默忽略 `-ar`/`-ac`），对可 copy 源强制重编码。
+
+**thumbnail 精确 seek**
+- `ThumbnailOptions.seekMode(SeekMode)`（`INPUT_FAST` 默认 / `OUTPUT_ACCURATE`）：精确模式把 `-ss` 置于输出侧，时间点精确；默认保持输入侧快 seek，既有 argv 不变。
+
+**probe 字段扩展**
+- `StreamInfo` 扩：`profile`/`codecTag`/`hasBFrames`/`pixelFormat`/`level`/`timeBase`/`startTimeSeconds`/`durationSeconds`/`bitRate`/`nbFrames`/`sampleFormat`/`channelLayout`/`sampleAspectRatio`/`displayAspectRatio`/`attachedPic`（嵌套 `disposition.attached_pic`）/`language`（嵌套 `tags.language`）。
+- `FormatInfo` 扩：`nbPrograms`/`startTimeSeconds`。字段类型经真 ffprobe JSON 锚定。
+
+### 变更
+
+- `StreamInfo`/`FormatInfo`（record）新增字段使其**规范构造器签名变化**：直接 `new StreamInfo(...)`/`new FormatInfo(...)` 的调用方需注意——已提供**保留旧 10/6 参签名的便捷构造器**（新字段取缺失默认），故读侧访问器与旧构造调用均源码兼容。
 
 ## [1.0.0] - 2026-07-14
 

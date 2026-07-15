@@ -5,19 +5,38 @@ import io.github.pandong2015.ffmpeg4j.model.MediaType;
 /**
  * 单条媒体流的探测结果，对应 ffprobe {@code -show_streams} 的一个数组元素。
  *
- * <p>仅在语义适用时填充相应字段：视频流有 {@code width/height/帧率}，音频流有
- * {@code sampleRate/channels}；不适用的字段为 {@code null}。
+ * <p>仅在语义适用时填充相应字段：视频流有 {@code width/height/帧率/pixelFormat/level/hasBFrames}，
+ * 音频流有 {@code sampleRate/channels/sampleFormat/channelLayout}；不适用的对象型字段为 {@code null}。
+ * 数字型缺失以哨兵填充（秒值 {@code 0.0}、{@code bitRate}/{@code nbFrames} 为 {@code -1}）。字段类型与
+ * 专属性以真实 ffprobe JSON 锚定（{@code has_b_frames}/{@code level} 为裸整数，{@code bit_rate}/
+ * {@code nb_frames}/{@code start_time}/{@code duration} 为带引号字符串，映射层宽松解析）。
  *
- * @param index          流序号（0 起）
- * @param type           流类型（复用 {@link MediaType}）
- * @param codecName      编解码器短名，如 {@code "h264"}、{@code "aac"}、{@code "subrip"}
- * @param codecLongName  编解码器长名；缺失为 {@code null}
- * @param width          视频宽（像素）；非视频或缺失为 {@code null}
- * @param height         视频高（像素）；非视频或缺失为 {@code null}
- * @param avgFrameRate   平均帧率有理数字符串，如 {@code "10/1"}；缺失为 {@code null}
- * @param rFrameRate     基准帧率有理数字符串，如 {@code "10/1"}；缺失为 {@code null}
- * @param sampleRate     音频采样率（Hz）；非音频或缺失为 {@code null}
- * @param channels       音频声道数；非音频或缺失为 {@code null}
+ * @param index             流序号（0 起）
+ * @param type              流类型（复用 {@link MediaType}）
+ * @param codecName         编解码器短名，如 {@code "h264"}、{@code "aac"}、{@code "subrip"}
+ * @param codecLongName     编解码器长名；缺失为 {@code null}
+ * @param width             视频宽（像素）；非视频或缺失为 {@code null}
+ * @param height            视频高（像素）；非视频或缺失为 {@code null}
+ * @param avgFrameRate      平均帧率有理数字符串，如 {@code "10/1"}；缺失为 {@code null}
+ * @param rFrameRate        基准帧率有理数字符串，如 {@code "10/1"}；缺失为 {@code null}
+ * @param sampleRate        音频采样率（Hz）；非音频或缺失为 {@code null}
+ * @param channels          音频声道数；非音频或缺失为 {@code null}
+ * @param profile           编码 profile，如 {@code "High"}/{@code "LC"}；缺失为 {@code null}
+ * @param codecTag          {@code codec_tag_string}，如 {@code "avc1"}；缺失为 {@code null}
+ * @param hasBFrames        {@code has_b_frames}（B 帧延迟数）；非视频或缺失为 {@code null}
+ * @param pixelFormat       {@code pix_fmt}，如 {@code "yuv420p"}；非视频或缺失为 {@code null}
+ * @param level             编码 level；非视频或缺失为 {@code null}
+ * @param timeBase          {@code time_base}，如 {@code "1/12800"}；缺失为 {@code null}
+ * @param startTimeSeconds  流起始时间（秒）；缺失为 {@code 0.0}
+ * @param durationSeconds   流时长（秒）；缺失为 {@code 0.0}
+ * @param bitRate           流码率（bit/s）；缺失为 {@code -1}
+ * @param nbFrames          帧数（{@code nb_frames}）；缺失为 {@code -1}
+ * @param sampleFormat      {@code sample_fmt}，如 {@code "fltp"}；非音频或缺失为 {@code null}
+ * @param channelLayout     {@code channel_layout}，如 {@code "stereo"}；非音频或缺失为 {@code null}
+ * @param sampleAspectRatio {@code sample_aspect_ratio}（SAR），如 {@code "1:1"}；缺失为 {@code null}
+ * @param displayAspectRatio {@code display_aspect_ratio}（DAR），如 {@code "4:3"}；缺失为 {@code null}
+ * @param attachedPic       是否为封面图流（{@code disposition.attached_pic == 1}）；缺失为 {@code false}
+ * @param language          {@code tags.language}，如 {@code "und"}/{@code "eng"}；缺失为 {@code null}
  */
 public record StreamInfo(
         int index,
@@ -29,7 +48,36 @@ public record StreamInfo(
         String avgFrameRate,
         String rFrameRate,
         Integer sampleRate,
-        Integer channels) {
+        Integer channels,
+        String profile,
+        String codecTag,
+        Integer hasBFrames,
+        String pixelFormat,
+        Integer level,
+        String timeBase,
+        double startTimeSeconds,
+        double durationSeconds,
+        long bitRate,
+        long nbFrames,
+        String sampleFormat,
+        String channelLayout,
+        String sampleAspectRatio,
+        String displayAspectRatio,
+        boolean attachedPic,
+        String language) {
+
+    /**
+     * 便捷构造器：保留 v1.0 的 10 参签名（index/type/codec/分辨率/帧率/采样率/声道），新字段取缺失默认
+     * （对象型 {@code null}、秒值 {@code 0.0}、{@code bitRate}/{@code nbFrames} 为 {@code -1}、{@code attachedPic}
+     * 为 {@code false}）。使既有直接构造点（含测试）无需改动即可编译，扩字段保持源码兼容。
+     */
+    public StreamInfo(int index, MediaType type, String codecName, String codecLongName,
+                      Integer width, Integer height, String avgFrameRate, String rFrameRate,
+                      Integer sampleRate, Integer channels) {
+        this(index, type, codecName, codecLongName, width, height, avgFrameRate, rFrameRate,
+                sampleRate, channels,
+                null, null, null, null, null, null, 0.0, 0.0, -1L, -1L, null, null, null, null, false, null);
+    }
 
     public boolean isVideo() {
         return type == MediaType.VIDEO;
