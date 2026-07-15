@@ -17,6 +17,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 import io.github.pandong2015.ffmpeg4j.engine.RunResult;
 import io.github.pandong2015.ffmpeg4j.env.FfmpegEnvironment;
+import io.github.pandong2015.ffmpeg4j.model.Filters;
+import io.github.pandong2015.ffmpeg4j.model.Input;
 import io.github.pandong2015.ffmpeg4j.probe.ProbeResult;
 import io.github.pandong2015.ffmpeg4j.probe.StreamInfo;
 
@@ -181,6 +183,26 @@ class FfmpegFacadeE2ETest {
         assertTrue(v.durationSeconds() > 1.0, "流时长应约 2s，实际 " + v.durationSeconds());
     }
 
+    @Test
+    void 转码type1风格水印加码控产出合法视频(@TempDir Path tmp) throws Exception {
+        assumeFfmpeg();
+        File src = generateAV(tmp.resolve("src.mp4"), 2);
+        File logo = generateLogo(tmp.resolve("logo.png"));
+        File out = tmp.resolve("type1.mp4").toFile();
+
+        // scale=320:-1 → padToEven（补偶）→ 右下角 shortest 水印（-loop 1 图输入）+ h264 + 码控 + GOP。
+        RunResult r = Ffmpeg.transcode(src, out,
+                TranscodeOptions.defaults().videoCodec("libx264").fps(25)
+                        .maxrate("2M").bufsize("4M").gop(50)
+                        .videoFilter(v -> Filters.overlay(
+                                Filters.padToEven(Filters.scale(v, 320, -1)),
+                                Input.of(logo).withInputArgs("-loop", "1").video(),
+                                "W-w-6", "H-h-6", true)));
+        assertEquals(0, r.exitCode());
+        assertNonEmpty(out);
+        assertFalse(Ffmpeg.probe(out).videoStreams().isEmpty(), "type1 输出应有视频流");
+    }
+
     // ===== helpers =====
 
     private static void assumeFfmpeg() {
@@ -209,6 +231,19 @@ class FfmpegFacadeE2ETest {
         p.getInputStream().readAllBytes();
         int code = p.waitFor();
         assumeTrue(code == 0, "ffmpeg 生成素材失败，退出码 " + code);
+        return out.toFile();
+    }
+
+    /** 生成一张 48x24 红色 PNG 作水印图。 */
+    private static File generateLogo(Path out) throws IOException, InterruptedException {
+        List<String> cmd = List.of(
+                "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                "-f", "lavfi", "-i", "color=c=red:size=48x24:duration=1",
+                "-frames:v", "1", out.toString());
+        Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
+        p.getInputStream().readAllBytes();
+        int code = p.waitFor();
+        assumeTrue(code == 0, "ffmpeg 生成水印图失败，退出码 " + code);
         return out.toFile();
     }
 

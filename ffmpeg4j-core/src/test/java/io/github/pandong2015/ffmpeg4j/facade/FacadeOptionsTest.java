@@ -2,11 +2,14 @@ package io.github.pandong2015.ffmpeg4j.facade;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
@@ -28,6 +31,36 @@ class FacadeOptionsTest {
         assertNull(base.crf(), "原对象不应被修改（不可变）");
         assertEquals(20, derived.crf());
         assertEquals("slow", derived.preset());
+    }
+
+    @Test
+    void transcode新增码控字段默认与wither() {
+        TranscodeOptions base = TranscodeOptions.defaults();
+        assertNull(base.videoFilter());
+        assertNull(base.fps());
+        assertNull(base.maxrate());
+        assertNull(base.bufsize());
+        assertNull(base.gop());
+        assertEquals(List.of(), base.extraOutputArgs(), "extraOutputArgs 默认为空 List");
+
+        TranscodeOptions o = base.fps(25).maxrate("2M").bufsize("4M").gop(50)
+                .extraOutputArgs("-x265-params", "vbv-maxrate=2000")
+                .videoFilter(v -> v);
+        assertNull(base.fps(), "原对象不应被修改");
+        assertEquals(25.0, o.fps(), 1e-9);
+        assertEquals("2M", o.maxrate());
+        assertEquals("4M", o.bufsize());
+        assertEquals(50, o.gop());
+        assertEquals(List.of("-x265-params", "vbv-maxrate=2000"), o.extraOutputArgs());
+        assertNotNull(o.videoFilter());
+    }
+
+    @Test
+    void transcode的fps与gop非正在构造期抛异常() {
+        assertThrows(IllegalArgumentException.class, () -> TranscodeOptions.defaults().fps(0));
+        assertThrows(IllegalArgumentException.class, () -> TranscodeOptions.defaults().fps(-1));
+        assertThrows(IllegalArgumentException.class, () -> TranscodeOptions.defaults().gop(0));
+        assertThrows(IllegalArgumentException.class, () -> TranscodeOptions.defaults().gop(-5));
     }
 
     @Test

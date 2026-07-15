@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test;
 
 import io.github.pandong2015.ffmpeg4j.FfmpegException;
 import io.github.pandong2015.ffmpeg4j.compiler.CompiledCommand;
+import io.github.pandong2015.ffmpeg4j.model.Filters;
+import io.github.pandong2015.ffmpeg4j.model.Input;
 import io.github.pandong2015.ffmpeg4j.model.MediaType;
 import io.github.pandong2015.ffmpeg4j.probe.FormatInfo;
 import io.github.pandong2015.ffmpeg4j.probe.ProbeResult;
@@ -48,6 +50,77 @@ class FacadeCommandBuildTest {
         List<String> argv = cmd.argv();
         assertTrue(argv.contains("0:v:0?"), "视频应为可选映射（缺视轨时不致中止）: " + argv);
         assertTrue(argv.contains("0:a:0?"), "音频应为可选映射（缺音轨时不致中止）: " + argv);
+    }
+
+    @Test
+    void 转码未设videoFilter时双可选无filterComplex() {
+        CompiledCommand cmd = FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.mp4"), TranscodeOptions.defaults());
+        assertTrue(cmd.filterComplex() == null, "无 videoFilter 不应有 filter_complex");
+        assertTrue(cmd.argv().contains("0:v:0?"), "视频应为可选映射: " + cmd.argv());
+        assertTrue(cmd.argv().contains("0:a:0?"), "音频应为可选映射: " + cmd.argv());
+    }
+
+    @Test
+    void 转码挂videoFilter后视频经filterComplex而音频仍可选() {
+        CompiledCommand cmd = FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults().videoFilter(v -> Filters.scale(v, 1280, -1)));
+        assertNotNull(cmd.filterComplex(), "挂 videoFilter 应有 filter_complex");
+        assertTrue(cmd.filterComplex().contains("scale"), "应含 scale: " + cmd.filterComplex());
+        assertTrue(cmd.argv().contains("0:a:0?"), "音频应为可选映射: " + cmd.argv());
+        assertFalse(cmd.argv().contains("0:v:0?"), "视频经滤镜后不应是可选原始映射: " + cmd.argv());
+    }
+
+    @Test
+    void 转码videoFilter内多输入水印自动补第二路输入() {
+        CompiledCommand cmd = FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults().videoFilter(v ->
+                        Filters.overlay(v, Input.of("logo.png").withInputArgs("-loop", "1").video(),
+                                "W-w-6", "H-h-6", true)));
+        List<String> argv = cmd.argv();
+        assertEquals(2, argv.stream().filter("-i"::equals).count(), "应有两路 -i: " + argv);
+        assertTrue(cmd.filterComplex().contains("[0:v:0][1:v:0]overlay"),
+                "overlay 应接 [0:v:0][1:v:0]: " + cmd.filterComplex());
+        assertTrue(cmd.filterComplex().contains("shortest=1"), "循环水印应含 shortest=1: " + cmd.filterComplex());
+        assertAdjacent(argv, "-loop", "1");
+    }
+
+    @Test
+    void 转码类型化码控与GOP派生() {
+        CompiledCommand cmd = FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults().videoCodec("libx264").fps(25).maxrate("2M").bufsize("4M").gop(50));
+        List<String> argv = cmd.argv();
+        assertAdjacent(argv, "-r", "25");
+        assertAdjacent(argv, "-maxrate", "2M");
+        assertAdjacent(argv, "-bufsize", "4M");
+        assertAdjacent(argv, "-keyint_min", "50");
+        assertAdjacent(argv, "-g", "50");
+        assertAdjacent(argv, "-sc_threshold", "0");
+    }
+
+    @Test
+    void 转码h265的VBV经extraOutputArgs逐字追加() {
+        CompiledCommand cmd = FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults().videoCodec("libx265")
+                        .extraOutputArgs("-x265-params", "vbv-maxrate=2000:vbv-bufsize=4000"));
+        List<String> argv = cmd.argv();
+        assertAdjacent(argv, "-c:v", "libx265");
+        assertAdjacent(argv, "-x265-params", "vbv-maxrate=2000:vbv-bufsize=4000");
+    }
+
+    @Test
+    void 转码默认不含码控段() {
+        CompiledCommand cmd = FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.mp4"), TranscodeOptions.defaults());
+        List<String> argv = cmd.argv();
+        assertFalse(argv.contains("-r"), "默认不应含 -r: " + argv);
+        assertFalse(argv.contains("-maxrate"), "默认不应含 -maxrate: " + argv);
+        assertFalse(argv.contains("-g"), "默认不应含 -g: " + argv);
+        assertFalse(argv.contains("-sc_threshold"), "默认不应含 -sc_threshold: " + argv);
     }
 
     // ===== 2. remux（§7.3 字幕分派）=====
