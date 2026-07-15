@@ -9,7 +9,8 @@ import java.util.List;
 /**
  * 把 ffprobe 的 JSON（{@code -show_format -show_streams}）映射为结构化 {@link ProbeResult}。
  *
- * <p>纯函数、无副作用、不触碰进程，因此可被单测直接以样本 JSON 驱动。
+ * <p>纯函数、无副作用、不触碰进程，因此可被单测直接以样本 JSON 驱动。数字型字段宽松解析
+ * （ffprobe 常把数字写成带引号字符串）；类型专属字段在 JSON 缺失时以 {@code null}/哨兵填充，不抛异常。
  */
 final class ProbeMapper {
 
@@ -27,7 +28,9 @@ final class ProbeMapper {
                 format.opt("duration").asDouble(0.0),
                 format.opt("bit_rate").asLong(-1L),
                 format.opt("size").asLong(-1L),
-                format.opt("nb_streams").asInt(0));
+                format.opt("nb_streams").asInt(0),
+                format.opt("nb_programs").asInt(0),
+                format.opt("start_time").asDouble(0.0));
     }
 
     private static List<StreamInfo> mapStreams(JsonValue streams) {
@@ -51,7 +54,23 @@ final class ProbeMapper {
                     optString(s, "avg_frame_rate"),
                     optString(s, "r_frame_rate"),
                     optInt(s, "sample_rate"),
-                    optInt(s, "channels")));
+                    optInt(s, "channels"),
+                    optString(s, "profile"),
+                    optString(s, "codec_tag_string"),
+                    optInt(s, "has_b_frames"),
+                    optString(s, "pix_fmt"),
+                    optInt(s, "level"),
+                    optString(s, "time_base"),
+                    s.opt("start_time").asDouble(0.0),
+                    s.opt("duration").asDouble(0.0),
+                    s.opt("bit_rate").asLong(-1L),
+                    s.opt("nb_frames").asLong(-1L),
+                    optString(s, "sample_fmt"),
+                    optString(s, "channel_layout"),
+                    optString(s, "sample_aspect_ratio"),
+                    optString(s, "display_aspect_ratio"),
+                    s.opt("disposition").opt("attached_pic").asInt(0) == 1,
+                    s.opt("tags").opt("language").asString(null)));
         }
         return result;
     }
