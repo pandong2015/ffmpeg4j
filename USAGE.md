@@ -1,6 +1,6 @@
 # ffmpeg4j 使用说明
 
-一份从「装依赖」到「Spring Boot 集成」的完整上手指南。术语与示例均对齐当前实现（`1.0.0`，已发布至 Maven Central）。
+一份从「装依赖」到「Spring Boot 集成」的完整上手指南。术语与示例均对齐当前实现（`1.2.0`，已发布至 Maven Central）。
 
 > 速览：普通 Java 项目引 **`ffmpeg4j-core`**，用静态门面 `Ffmpeg.xxx(...)` 一行式完成常见任务；
 > Spring Boot 项目引 **`ffmpeg4j-spring-boot-starter`**，注入 `FfmpegClient` bean、配置走 `application.yml`。
@@ -58,7 +58,7 @@ ffprobe -version
 
 ## 3. 安装
 
-已发布到 **Maven Central**（groupId `io.github.pandong2015`），**无需额外仓库配置**。当前版本 **`1.0.0`**。
+已发布到 **Maven Central**（groupId `io.github.pandong2015`），**无需额外仓库配置**。当前版本 **`1.2.0`**。
 
 ### 普通 Java 项目
 
@@ -67,13 +67,13 @@ ffprobe -version
 <dependency>
     <groupId>io.github.pandong2015</groupId>
     <artifactId>ffmpeg4j-core</artifactId>
-    <version>1.0.0</version>
+    <version>1.2.0</version>
 </dependency>
 ```
 
 **Gradle**（Kotlin DSL）
 ```kotlin
-implementation("io.github.pandong2015:ffmpeg4j-core:1.0.0")
+implementation("io.github.pandong2015:ffmpeg4j-core:1.2.0")
 ```
 
 ### Spring Boot 项目
@@ -83,13 +83,13 @@ implementation("io.github.pandong2015:ffmpeg4j-core:1.0.0")
 <dependency>
     <groupId>io.github.pandong2015</groupId>
     <artifactId>ffmpeg4j-spring-boot-starter</artifactId>
-    <version>1.0.0</version>
+    <version>1.2.0</version>
 </dependency>
 ```
 
 **Gradle**（Kotlin DSL）
 ```kotlin
-implementation("io.github.pandong2015:ffmpeg4j-spring-boot-starter:1.0.0")
+implementation("io.github.pandong2015:ffmpeg4j-spring-boot-starter:1.2.0")
 ```
 
 > starter 传递引入 `ffmpeg4j-core`，无需再单独声明。可观测依赖（actuator/micrometer）为可选，见 [§13](#13-spring-boot-集成)。
