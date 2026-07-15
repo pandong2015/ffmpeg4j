@@ -66,6 +66,57 @@ class FiltersCoverageTest {
     }
 
     @Test
+    void padToEven补齐偶数尺寸仅含wh() {
+        VideoStream out = Filters.padToEven(in.video());
+        FilterNode n = nodeOf(out);
+        assertEquals("pad", n.filter());
+        assertEquals("pad=w=ceil(iw/2)*2:h=ceil(ih/2)*2", n.renderBody());
+        assertEquals(1, n.inputs().size());
+    }
+
+    @Test
+    void pad表达式重载wh逐字下发不转义() {
+        VideoStream out = Filters.pad(in.video(), "ceil(iw/2)*2", "ceil(ih/2)*2",
+                "(ow-iw)/2", "(oh-ih)/2", "black");
+        FilterNode n = nodeOf(out);
+        assertEquals("pad=w=ceil(iw/2)*2:h=ceil(ih/2)*2:x=(ow-iw)/2:y=(oh-ih)/2:color=black", n.renderBody());
+        assertTrue(!n.args().get(0).escape(), "表达式经 Arg.of 不应转义");
+    }
+
+    @Test
+    void overlay的shortest重载追加shortest1() {
+        VideoStream base = in.video();
+        VideoStream over = Input.of("logo.png").video();
+        FilterNode n = nodeOf(Filters.overlay(base, over, "W-w-6", "H-h-6", true));
+        assertEquals("overlay=x=W-w-6:y=H-h-6:shortest=1", n.renderBody());
+        assertEquals(2, n.inputs().size());
+    }
+
+    @Test
+    void overlay的shortest为false时不追加() {
+        FilterNode n = nodeOf(Filters.overlay(in.video(), Input.of("logo.png").video(), "0", "0", false));
+        assertEquals("overlay=x=0:y=0", n.renderBody());
+    }
+
+    @Test
+    void rawFilterVideo双输入接两路且body逐字() {
+        VideoStream base = in.video();
+        VideoStream wm = Input.of("wm.png").video();
+        String raw = "overlay=shortest=1:x=if(eq(mod(n\\,200)\\,0)\\,20\\,x)";
+        FilterNode n = nodeOf(Filters.rawFilterVideo(base, wm, raw));
+        assertEquals(raw, n.renderBody(), "2 输入逃生舱 body 应逐字");
+        assertEquals(2, n.inputs().size());
+        assertEquals(List.of(MediaType.VIDEO), n.outputTypes());
+    }
+
+    @Test
+    void rawFilterVideo单输入回归不变() {
+        FilterNode n = nodeOf(Filters.rawFilterVideo(in.video(), "pad=ceil(iw/2)*2:ceil(ih/2)*2"));
+        assertEquals("pad=ceil(iw/2)*2:ceil(ih/2)*2", n.renderBody());
+        assertEquals(1, n.inputs().size());
+    }
+
+    @Test
     void fade视频淡出节点且小数start_time按小数渲染() {
         // 5.5 走 num 的非整数分支渲染为 "5.5"；duration 2 走整数分支渲染为 "2"
         FilterNode n = nodeOf(Filters.fade(in.video(), "out", 5.5, 2));

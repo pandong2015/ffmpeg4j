@@ -187,9 +187,35 @@ TranscodeOptions opts = TranscodeOptions.defaults()
 Ffmpeg.transcode(new File("in.mp4"), new File("out.mp4"), opts);
 ```
 
+**转码接滤镜链 + 码控（type1 风格：缩放补偶 + 右下角水印 + VBV + GOP）**——`videoFilter` 是单输入滤镜链入口，
+函数内可自建水印图输入并叠加，编译器自动补第二路 `-i`；类型化码控 `fps`/`maxrate`/`bufsize`/`gop` + `extraOutputArgs` 逃生舱：
+
+```java
+import io.github.pandong2015.ffmpeg4j.model.Filters;
+import io.github.pandong2015.ffmpeg4j.model.Input;
+
+File logo = new File("/app/watermarks/logo.png");
+TranscodeOptions t1 = TranscodeOptions.defaults()
+        .videoCodec("libx264").fps(25).maxrate("2M").bufsize("4M").gop(50)   // gop=帧数（下游算 fps*秒）
+        .videoFilter(v -> Filters.overlay(
+                Filters.padToEven(Filters.scale(v, 1280, -1)),               // 缩放后补偶
+                Input.of(logo).withInputArgs("-loop", "1").video(),          // 水印图（循环）
+                "W-w-6", "H-h-6", true));                                    // 右下角、shortest 收尾
+Ffmpeg.transcode(new File("in.mp4"), new File("out.mp4"), t1);
+
+// libx265 的 VBV 走 extraOutputArgs（库不自动翻译 maxrate→x265-params）：
+TranscodeOptions h265 = TranscodeOptions.defaults().videoCodec("libx265")
+        .extraOutputArgs("-x265-params", "vbv-maxrate=2000:vbv-bufsize=4000");
+```
+
+> 复杂多输入 overlay 表达式（动/浮水印的 `if/mod/sin`，含转义逗号 `\,`）走 `Filters.rawFilterVideo(base, over, raw)`
+> 逐字下发（转义自负）。**7 种 watermarkType 的具体表达式属下游业务规则，不在 ffmpeg4j-core**——core 提供通用底座
+> （overlay shortest / 2 输入逃生舱 / `-loop` 输入 / pad 表达式），下游据此组合。
+
 各门面对应 `TranscodeOptions` / `RemuxOptions` / `ClipOptions` / `ExtractAudioOptions` / `ThumbnailOptions` /
 `GifOptions` / `ConcatOptions` / `BurnSubtitlesOptions`，均含各自的特定项与执行侧的 `onProgress` / `timeout`。
-特定项举例：`ExtractAudioOptions.sampleRate/channels`（`-ar`/`-ac`，设定即禁用 copy）、
+特定项举例：`TranscodeOptions.videoFilter/fps/maxrate/bufsize/gop/extraOutputArgs`（滤镜链 + 码控）、
+`ExtractAudioOptions.sampleRate/channels`（`-ar`/`-ac`，设定即禁用 copy）、
 `ThumbnailOptions.seekMode`（`INPUT_FAST` 默认 / `OUTPUT_ACCURATE` 精确）、
 `GifOptions.start/duration/fps/width/height/scaleFlags`。
 

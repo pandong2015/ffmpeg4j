@@ -100,16 +100,49 @@ final class FacadeSupport {
             args.add("-b:v");
             args.add(o.videoBitrate());
         }
+        if (o.fps() != null) {
+            args.add("-r");
+            args.add(num(o.fps()));
+        }
+        // h264 惯用 VBV：-maxrate/-bufsize；libx265 的 VBV 走 extraOutputArgs（不自动翻译）。
+        if (o.maxrate() != null) {
+            args.add("-maxrate");
+            args.add(o.maxrate());
+        }
+        if (o.bufsize() != null) {
+            args.add("-bufsize");
+            args.add(o.bufsize());
+        }
         args.add("-c:a");
         args.add(o.audioCodec());
         if (o.audioBitrate() != null) {
             args.add("-b:a");
             args.add(o.audioBitrate());
         }
-        // 用可选映射（0:v:0?/0:a:0?）：纯音频输入无视轨、静音视频无音轨时静默跳过而非中止；
-        // 未命中的流类型对应的 -c:v/-c:a 在无匹配输出流时被 ffmpeg 忽略，故仍可无条件附上。
-        Output output = Output.to(out, input.videoOptional(), input.audioOptional())
-                .withArgs(args.toArray(new String[0]));
+        if (o.gop() != null) {
+            // GOP 段：关键帧间隔帧数派生 -keyint_min/-g/-sc_threshold 0（下游按 fps*秒 传入帧数）。
+            String g = o.gop().toString();
+            args.add("-keyint_min");
+            args.add(g);
+            args.add("-g");
+            args.add(g);
+            args.add("-sc_threshold");
+            args.add("0");
+        }
+        // 逃生舱：置于类型化码控之后（同键 ffmpeg 取后者）；内容不参与类型校验。
+        args.addAll(o.extraOutputArgs());
+
+        Output output;
+        if (o.videoFilter() != null) {
+            // 挂滤镜链：视频以必选映射 input.video() 为起点、经 filter_complex；音频仍可选映射（缺音轨静默跳过）。
+            // 滤镜产出 FilterOrigin 后 optional 语义不复存在，故视频起点须必选（对纯音频输入即使用者错误，交由 ffmpeg 报错）。
+            VideoStream v = o.videoFilter().apply(input.video());
+            output = Output.to(out, v, input.audioOptional()).withArgs(args.toArray(new String[0]));
+        } else {
+            // 无滤镜：视频/音频双可选映射（0:v:0?/0:a:0?），纯音频/静音视频静默跳过，argv 逐字节与既有一致。
+            output = Output.to(out, input.videoOptional(), input.audioOptional())
+                    .withArgs(args.toArray(new String[0]));
+        }
         return new GraphCompiler().compile(output);
     }
 
