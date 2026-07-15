@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.time.Duration;
 import java.util.function.Consumer;
@@ -120,5 +121,29 @@ class RemuxExtractOptionsTest {
         ExtractAudioOptions o = ExtractAudioOptions.defaults().timeout(Duration.ofSeconds(30));
         assertEquals(Duration.ofSeconds(30), o.timeout());
         assertNull(ExtractAudioOptions.defaults().toRunOptions().timeout(), "默认无超时应映射为 null");
+    }
+
+    @Test
+    void extract默认采样率与声道均为null() {
+        ExtractAudioOptions base = ExtractAudioOptions.defaults();
+        assertNull(base.sampleRate());
+        assertNull(base.channels());
+    }
+
+    @Test
+    void extractSampleRate与channels为wither且保留其余字段() {
+        ExtractAudioOptions o = ExtractAudioOptions.defaults().sampleRate(16000).channels(1);
+        assertEquals(16000, o.sampleRate());
+        assertEquals(1, o.channels());
+        assertNull(ExtractAudioOptions.defaults().sampleRate(16000).channels(),
+                "只设采样率不应影响声道");
+    }
+
+    @Test
+    void extract非正采样率或声道在构造期抛异常() {
+        assertThrows(IllegalArgumentException.class, () -> ExtractAudioOptions.defaults().sampleRate(0));
+        assertThrows(IllegalArgumentException.class, () -> ExtractAudioOptions.defaults().sampleRate(-1));
+        assertThrows(IllegalArgumentException.class, () -> ExtractAudioOptions.defaults().channels(0));
+        assertThrows(IllegalArgumentException.class, () -> ExtractAudioOptions.defaults().channels(-2));
     }
 }

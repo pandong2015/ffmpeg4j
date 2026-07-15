@@ -94,6 +94,16 @@ public final class Ffmpeg {
         return defaultClient().thumbnail(in, out, atSec, options);
     }
 
+    // ===== 5b. gif（两遍调色板生成 GIF）=====
+
+    public static RunResult gif(File in, File out) {
+        return defaultClient().gif(in, out);
+    }
+
+    public static RunResult gif(File in, File out, GifOptions options) {
+        return defaultClient().gif(in, out, options);
+    }
+
     // ===== 6. concat（拼接）=====
 
     public static RunResult concat(List<File> ins, File out) {

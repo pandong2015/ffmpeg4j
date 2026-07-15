@@ -2,6 +2,7 @@ package io.github.pandong2015.ffmpeg4j.facade;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -322,6 +323,142 @@ class FacadeCommandBuildTest {
         assertTrue(ContainerFamily.isTextSubtitle("subrip"));
         assertTrue(ContainerFamily.isGraphicSubtitle("dvd_subtitle"));
         assertFalse(ContainerFamily.isTextSubtitle("hdmv_pgs_subtitle"));
+    }
+
+    // ===== 5b. gif（两遍调色板；编译器自动 split 菱形）=====
+
+    @Test
+    void gif默认链含fps与palettegen与paletteuse与split() {
+        CompiledCommand cmd = FacadeSupport.buildGif(
+                new File("in.mp4"), new File("out.gif"), GifOptions.defaults());
+        String fc = cmd.filterComplex();
+        assertNotNull(fc, "GIF 应有 filter_complex");
+        assertTrue(fc.contains("fps=fps=15"), "默认 fps=15: " + fc);
+        assertTrue(fc.contains("palettegen"), "应含 palettegen: " + fc);
+        assertTrue(fc.contains("paletteuse"), "应含 paletteuse: " + fc);
+        assertTrue(fc.contains("split=2"), "主流被 palettegen/paletteuse 两次消费应自动 split=2: " + fc);
+    }
+
+    @Test
+    void gif未设width时链中无scale() {
+        CompiledCommand cmd = FacadeSupport.buildGif(
+                new File("in.mp4"), new File("out.gif"), GifOptions.defaults());
+        assertFalse(cmd.filterComplex().contains("scale"), "未设 width 不应有 scale: " + cmd.filterComplex());
+    }
+
+    @Test
+    void gif设width时含scale() {
+        CompiledCommand cmd = FacadeSupport.buildGif(
+                new File("in.mp4"), new File("out.gif"), GifOptions.defaults().fps(10).width(320));
+        String fc = cmd.filterComplex();
+        assertTrue(fc.contains("fps=fps=10"), "fps 应为 10: " + fc);
+        assertTrue(fc.contains("scale=w=320:h=-1"), "设 width=320 应有 scale=w=320:h=-1: " + fc);
+    }
+
+    @Test
+    void gif的ss与t均置输入侧() {
+        CompiledCommand cmd = FacadeSupport.buildGif(
+                new File("in.mp4"), new File("out.gif"), GifOptions.defaults().start(0.5).duration(1.0));
+        List<String> argv = cmd.argv();
+        assertAdjacent(argv, "-ss", "0.5");
+        assertAdjacent(argv, "-t", "1");
+        int iIdx = argv.indexOf("-i");
+        assertTrue(argv.indexOf("-ss") < iIdx, "-ss 应在 -i 之前: " + argv);
+        assertTrue(argv.indexOf("-t") < iIdx, "-t 应在 -i 之前（输入侧）: " + argv);
+    }
+
+    @Test
+    void gif的paletteuse主视频输入在调色板之前() {
+        // paletteuse 的两路输入顺序应为 [主视频分支][palette]；palette 由 palettegen 产出。
+        CompiledCommand cmd = FacadeSupport.buildGif(
+                new File("in.mp4"), new File("out.gif"), GifOptions.defaults());
+        String fc = cmd.filterComplex();
+        // 定位 palettegen 的输出 label，它应作为 paletteuse 的第二路输入。
+        java.util.regex.Matcher pg = java.util.regex.Pattern.compile("palettegen\\[(\\w+)\\]").matcher(fc);
+        assertTrue(pg.find(), "应能定位 palettegen 输出 label: " + fc);
+        String paletteLabel = pg.group(1);
+        java.util.regex.Matcher pu = java.util.regex.Pattern.compile("\\[(\\w+)\\]\\[(\\w+)\\]paletteuse").matcher(fc);
+        assertTrue(pu.find(), "应能定位 paletteuse 两路输入: " + fc);
+        assertEquals(paletteLabel, pu.group(2), "paletteuse 第二路输入应为 palette（palettegen 输出）: " + fc);
+        assertNotEquals(paletteLabel, pu.group(1), "paletteuse 第一路输入应为主视频分支而非 palette: " + fc);
+    }
+
+    @Test
+    void gif的scaleFlags显式设定才追加() {
+        CompiledCommand plain = FacadeSupport.buildGif(
+                new File("in.mp4"), new File("out.gif"), GifOptions.defaults().width(320));
+        assertFalse(plain.filterComplex().contains("flags"), "默认不应有 flags: " + plain.filterComplex());
+        CompiledCommand lanczos = FacadeSupport.buildGif(
+                new File("in.mp4"), new File("out.gif"), GifOptions.defaults().width(320).scaleFlags("lanczos"));
+        assertTrue(lanczos.filterComplex().contains("flags=lanczos"), "显式设 lanczos 应追加: " + lanczos.filterComplex());
+    }
+
+    // ===== extractAudio 的 -ar/-ac 与 copy 冲突 =====
+
+    @Test
+    void 抽音频采样率与声道映射为ar与ac() {
+        CompiledCommand cmd = FacadeSupport.buildExtractAudio(
+                new File("in.mp4"), new File("out.wav"), null,
+                ExtractAudioOptions.defaults().sampleRate(16000).channels(1));
+        assertAdjacent(cmd.argv(), "-ar", "16000");
+        assertAdjacent(cmd.argv(), "-ac", "1");
+    }
+
+    @Test
+    void 抽音频未设采样率时不含ar与ac() {
+        CompiledCommand cmd = FacadeSupport.buildExtractAudio(
+                new File("in.mp4"), new File("out.wav"), null, ExtractAudioOptions.defaults());
+        assertFalse(cmd.argv().contains("-ar"), "默认不应含 -ar: " + cmd.argv());
+        assertFalse(cmd.argv().contains("-ac"), "默认不应含 -ac: " + cmd.argv());
+    }
+
+    @Test
+    void 抽音频重采样时对可copy源强制重编码() {
+        // aac 源抽 m4a 本会 copy；设了 sampleRate 后须改用 aac 重编码（copy 会静默忽略 -ar）。
+        ProbeResult aac = probe(5.0, audio(0, "aac"));
+        CompiledCommand cmd = FacadeSupport.buildExtractAudio(
+                new File("in.m4a"), new File("out.m4a"), aac,
+                ExtractAudioOptions.defaults().sampleRate(16000));
+        assertAdjacent(cmd.argv(), "-c:a", "aac");
+        assertFalse(cmd.argv().contains("copy"), "重采样时不应 copy: " + cmd.argv());
+        assertAdjacent(cmd.argv(), "-ar", "16000");
+    }
+
+    @Test
+    void 抽音频未重采样时保持copy优化() {
+        ProbeResult aac = probe(5.0, audio(0, "aac"));
+        CompiledCommand cmd = FacadeSupport.buildExtractAudio(
+                new File("in.m4a"), new File("out.m4a"), aac, ExtractAudioOptions.defaults());
+        assertAdjacent(cmd.argv(), "-c:a", "copy");
+    }
+
+    // ===== thumbnail seekMode =====
+
+    @Test
+    void 抓帧默认输入侧快seek() {
+        CompiledCommand cmd = FacadeSupport.buildThumbnail(
+                new File("in.mp4"), new File("out.png"), 2.5, ThumbnailOptions.defaults());
+        assertTrue(cmd.argv().indexOf("-ss") < cmd.argv().indexOf("-i"),
+                "默认 INPUT_FAST：-ss 应在 -i 之前: " + cmd.argv());
+    }
+
+    @Test
+    void 抓帧OUTPUT_ACCURATE时ss置输出侧() {
+        CompiledCommand cmd = FacadeSupport.buildThumbnail(
+                new File("in.mp4"), new File("out.png"), 2.5,
+                ThumbnailOptions.defaults().seekMode(SeekMode.OUTPUT_ACCURATE));
+        List<String> argv = cmd.argv();
+        assertTrue(argv.indexOf("-ss") > argv.indexOf("-i"), "OUTPUT_ACCURATE：-ss 应在 -i 之后: " + argv);
+        assertAdjacent(argv, "-ss", "2.5");
+    }
+
+    @Test
+    void 抓帧OUTPUT_ACCURATE带缩放时ss与filterComplex共存() {
+        CompiledCommand cmd = FacadeSupport.buildThumbnail(
+                new File("in.mp4"), new File("out.png"), 1.0,
+                ThumbnailOptions.defaults().width(160).seekMode(SeekMode.OUTPUT_ACCURATE));
+        assertNotNull(cmd.filterComplex(), "带缩放应有 filter_complex");
+        assertTrue(cmd.argv().indexOf("-ss") > cmd.argv().indexOf("-i"), "-ss 应在输出侧: " + cmd.argv());
     }
 
     // ===== helpers =====

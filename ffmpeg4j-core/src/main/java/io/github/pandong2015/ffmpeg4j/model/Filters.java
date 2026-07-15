@@ -95,6 +95,26 @@ public final class Filters {
         return video("drawtext", args, in);
     }
 
+    // ===== 调色板族（GIF 两遍法）=====
+
+    /**
+     * 生成优化调色板（{@code palettegen}）：从输入视频统计颜色，产出一张调色板图，供 {@link #paletteUse} 消费。
+     * GIF 两遍法的第一遍。见门面 {@link io.github.pandong2015.ffmpeg4j.facade.Ffmpeg#gif}。
+     */
+    public static VideoStream paletteGen(VideoStream in) {
+        return video("palettegen", List.of(), in);
+    }
+
+    /**
+     * 应用调色板（{@code paletteuse}）：2 输入——{@code video} 为主视频、{@code palette} 为 {@link #paletteGen}
+     * 产出的调色板；输出用该调色板量化后的视频。输入顺序有语义（先 {@code video} 后 {@code palette}），与
+     * {@link #overlay} 同构。当同一主视频流同时喂给 {@code paletteGen} 与本滤镜时，编译器自动插入 {@code split} 重连。
+     */
+    public static VideoStream paletteUse(VideoStream video, VideoStream palette) {
+        return new VideoStream(new Origin.FilterOrigin(
+                new FilterNode("paletteuse", List.of(), List.of(video, palette), List.of(MediaType.VIDEO)), 0));
+    }
+
     // ===== 音频 5 =====
 
     /** 音量，线性因子（{@code "0.5"}）或分贝（{@code "6dB"}）。 */

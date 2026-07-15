@@ -185,6 +185,26 @@ public class FfmpegClient {
                 eff(options.timeout(), options.onProgress()));
     }
 
+    // ===== 5b. gif（两遍调色板生成 GIF）=====
+
+    public RunResult gif(File in, File out) {
+        return gif(in, out, GifOptions.defaults());
+    }
+
+    public RunResult gif(File in, File out, GifOptions options) {
+        CompiledCommand cmd = FacadeSupport.buildGif(in, out, options);
+        return FacadeSupport.execute(cmd, env, eff(options.timeout(), options.onProgress()));
+    }
+
+    public CompletableFuture<RunResult> gifAsync(File in, File out) {
+        return gifAsync(in, out, GifOptions.defaults());
+    }
+
+    public CompletableFuture<RunResult> gifAsync(File in, File out, GifOptions options) {
+        return executeAsync(() -> FacadeSupport.buildGif(in, out, options),
+                eff(options.timeout(), options.onProgress()));
+    }
+
     // ===== 6. concat（拼接）=====
 
     public RunResult concat(List<File> ins, File out) {
