@@ -2,11 +2,15 @@
 
 本文件记录 ffmpeg4j 各版本的显著变更。遵循「新增 / 变更 / 修复」分类，日期采用 ISO 8601。
 
-## [未发布]（面向 1.2.0）
+## [1.2.0] - 2026-07-15
 
-type1 转码所需的**滤镜链与码控能力**（P1，纯 additive、无 videoFilter 的转码 argv 逐字节不变、无编译器改动）。
+本次发布合并两批纯 additive 能力：面向下游 `ocs-media-task` 的 **P0 能力补齐** 与 type1 转码的 **滤镜链/码控能力（P1）**。默认行为逐字节不变，core 仍零重型依赖。
 
-### 新增
+### P1 —— 转码滤镜链与码控
+
+type1 转码所需的**滤镜链与码控能力**（纯 additive、无 videoFilter 的转码 argv 逐字节不变、无编译器改动）。
+
+#### 新增
 
 **L3 curated 滤镜**
 - `Filters.padToEven(VideoStream)`：补齐到最近偶数尺寸（`pad=w=ceil(iw/2)*2:h=ceil(ih/2)*2`），H.264/H.265 编码前补偶。
@@ -20,11 +24,11 @@ type1 转码所需的**滤镜链与码控能力**（P1，纯 additive、无 vide
 
 > **边界**：7 种 watermarkType 的具体 overlay 表达式是下游业务规则，不进 ffmpeg4j-core；core 提供通用底座（overlay shortest / 2 输入逃生舱 / `-loop` 输入 / pad 表达式），下游据此组合。
 
-## [未发布]（面向 1.1.0）
+### P0 —— media-task 能力补齐
 
 面向下游 `ocs-media-task` 的 **P0 能力补齐**（纯 additive、默认行为逐字节不变、core 仍零重型依赖）。
 
-### 新增
+#### 新增
 
 **L4 门面 —— GIF 生成（第 9 个门面）**
 - `Ffmpeg.gif(in, out[, GifOptions])` / `FfmpegClient.gif` + `gifAsync`：两遍调色板法生成 GIF（`fps`→可选 `scale`→`palettegen`/`paletteuse`），主流被两次消费由编译器**自动 `split` 重连**（菱形），产出与手写 type3 命令逐字节等价。
@@ -43,7 +47,7 @@ type1 转码所需的**滤镜链与码控能力**（P1，纯 additive、无 vide
 - `StreamInfo` 扩：`profile`/`codecTag`/`hasBFrames`/`pixelFormat`/`level`/`timeBase`/`startTimeSeconds`/`durationSeconds`/`bitRate`/`nbFrames`/`sampleFormat`/`channelLayout`/`sampleAspectRatio`/`displayAspectRatio`/`attachedPic`（嵌套 `disposition.attached_pic`）/`language`（嵌套 `tags.language`）。
 - `FormatInfo` 扩：`nbPrograms`/`startTimeSeconds`。字段类型经真 ffprobe JSON 锚定。
 
-### 变更
+#### 变更
 
 - `StreamInfo`/`FormatInfo`（record）新增字段使其**规范构造器签名变化**：直接 `new StreamInfo(...)`/`new FormatInfo(...)` 的调用方需注意——已提供**保留旧 10/6 参签名的便捷构造器**（新字段取缺失默认），故读侧访问器与旧构造调用均源码兼容。
 
@@ -109,4 +113,5 @@ type1 转码所需的**滤镜链与码控能力**（P1，纯 additive、无 vide
 
 - **1.0.0** 已 GPG 签名并部署至 **Maven Central**（2026-07-14）；`pom.xml` 的 `<scm>`/`<url>` 已为真实仓库地址。
 
+[1.2.0]: https://github.com/pandong2015/ffmpeg4j/releases/tag/v1.2.0
 [1.0.0]: https://github.com/pandong2015/ffmpeg4j/releases/tag/v1.0.0

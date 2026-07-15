@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.github.pandong2015</groupId>
         <artifactId>ffmpeg4j-parent</artifactId>
-        <version>1.0.1-SNAPSHOT</version>
+        <version>1.2.0</version>
     </parent>
 
     <!-- 便利聚合 starter（遵 Spring 官方约定）：不含 Java 源码，仅聚合 autoconfigure（传递引入 core）

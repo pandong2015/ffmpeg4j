@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.github.pandong2015</groupId>
         <artifactId>ffmpeg4j-parent</artifactId>
-        <version>1.0.1-SNAPSHOT</version>
+        <version>1.2.0</version>
     </parent>
 
     <!-- 坐标保持不变：io.github.pandong2015:ffmpeg4j-core（老用户升级无感）。 -->
