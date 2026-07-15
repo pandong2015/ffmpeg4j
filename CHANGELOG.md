@@ -2,6 +2,24 @@
 
 本文件记录 ffmpeg4j 各版本的显著变更。遵循「新增 / 变更 / 修复」分类，日期采用 ISO 8601。
 
+## [未发布]（面向 1.2.0）
+
+type1 转码所需的**滤镜链与码控能力**（P1，纯 additive、无 videoFilter 的转码 argv 逐字节不变、无编译器改动）。
+
+### 新增
+
+**L3 curated 滤镜**
+- `Filters.padToEven(VideoStream)`：补齐到最近偶数尺寸（`pad=w=ceil(iw/2)*2:h=ceil(ih/2)*2`），H.264/H.265 编码前补偶。
+- `Filters.pad(VideoStream, String w, String h, …)`：pad 的表达式重载（w/h/x/y 接受 ffmpeg 表达式，逐字下发）。
+- `Filters.overlay(base, over, x, y, boolean shortest)`：overlay 的 `shortest` 重载，供 `-loop 1` 循环水印收尾。
+- `Filters.rawFilterVideo(base, over, raw)`：2 输入原始视频滤镜逃生舱（与单输入版对称，解锁复杂多输入 overlay）。新增 curated `padToEven` 使数量 18→19（pad 表达式/overlay shortest 为既有滤镜的重载，2 输入 rawFilterVideo 为逃生舱、不计入）。
+
+**L4 转码进阶**
+- `TranscodeOptions.videoFilter(Function<VideoStream,VideoStream>)`：单输入视频滤镜链入口。给定时视频以必选映射为起点经 `filter_complex`、音频仍可选；未给定时行为逐字节不变。函数内可自建额外输入（水印图）叠加，编译器自动补第二路 `-i`。
+- `TranscodeOptions` 类型化码控：`fps`（`-r`）、`maxrate`/`bufsize`（h264 VBV）、`gop`（关键帧间隔帧数，派生 `-keyint_min`/`-g`/`-sc_threshold 0`），与 `extraOutputArgs(String...)` 逃生舱（置于类型化码控之后；libx265 的 VBV 走此处，库不自动翻译）。
+
+> **边界**：7 种 watermarkType 的具体 overlay 表达式是下游业务规则，不进 ffmpeg4j-core；core 提供通用底座（overlay shortest / 2 输入逃生舱 / `-loop` 输入 / pad 表达式），下游据此组合。
+
 ## [未发布]（面向 1.1.0）
 
 面向下游 `ocs-media-task` 的 **P0 能力补齐**（纯 additive、默认行为逐字节不变、core 仍零重型依赖）。

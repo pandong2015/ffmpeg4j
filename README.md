@@ -16,7 +16,7 @@
 - **不可变「流即值」编排** —— `Input`/`Stream`/滤镜/`Output`，音视频字幕三态对称；滤镜是纯函数 `Stream → Stream`，同一 `Stream` 可被引用任意次（值语义）。
 - **图编译器** —— 把流引用图编译成 `ffmpeg` 命令行：引用计数侦测扇出、**自动插入 `split`/`asplit`**、拓扑排序分配 pad 名、去重、编译期类型/连接校验。
 - **稳健执行引擎** —— IO 拓扑自适应进度通道（`-progress pipe:1`/`tcp://`）、每路输出必排空防死锁、优雅取消（`q`→SIGTERM→SIGKILL）、结构化 `FfmpegException`；`run()`/`runAsync()` 双 API。
-- **9 个一行式门面** + **18 个类型化 curated 滤镜** + **万能逃生舱**（未建模滤镜/原始 argv 自负正确性）。
+- **9 个一行式门面** + **19 个类型化 curated 滤镜** + **万能逃生舱**（未建模滤镜/原始 argv 自负正确性）。
 - **结构化 probe**（`ffprobe -print_format json` → `ProbeResult`）。
 - **Spring Boot 3.x Starter** —— 注入 `FfmpegClient`、`application.yml` 配置、Actuator 健康/信息、Micrometer 指标。
 - **core 零重型依赖**（JSON 自研微解析器，无 Jackson/Spring），可在无头/裁剪 JRE 运行。
