@@ -46,6 +46,26 @@ public final class Filters {
                 Arg.of("x", x), Arg.of("y", y), Arg.of("color", color)), in);
     }
 
+    /**
+     * 填充/加边的<em>表达式</em>重载：{@code width}/{@code height}/{@code x}/{@code y} 均接受 ffmpeg 表达式
+     * （如 {@code ceil(iw/2)*2}、{@code (ow-iw)/2}），经 {@code Arg.of} 逐字下发、不转义。表达式内若含 filtergraph
+     * 分隔符（逗号）须由调用方预转义（{@code \,}）。
+     */
+    public static VideoStream pad(VideoStream in, String width, String height, String x, String y, String color) {
+        return video("pad", List.of(
+                Arg.of("w", width), Arg.of("h", height),
+                Arg.of("x", x), Arg.of("y", y), Arg.of("color", color)), in);
+    }
+
+    /**
+     * 补齐到最近偶数尺寸（{@code pad=w=ceil(iw/2)*2:h=ceil(ih/2)*2}，仅 w/h，x/y 默认 0、color 默认 black）。
+     * 供 H.264/H.265 编码前把奇数维（常由 {@code scale=W:-1} 产生）补成偶数，避免编码器报错；用户无需手写表达式。
+     */
+    public static VideoStream padToEven(VideoStream in) {
+        return video("pad", List.of(
+                Arg.of("w", "ceil(iw/2)*2"), Arg.of("h", "ceil(ih/2)*2")), in);
+    }
+
     /** 叠加。输入顺序有语义：{@code base} 为主输入、{@code over} 为叠加层。{@code x}/{@code y} 接受表达式。 */
     public static VideoStream overlay(VideoStream base, VideoStream over, String x, String y) {
         return video("overlay", List.of(Arg.of("x", x), Arg.of("y", y)), base, over);
@@ -53,6 +73,20 @@ public final class Filters {
 
     public static VideoStream overlay(VideoStream base, VideoStream over, int x, int y) {
         return overlay(base, over, Integer.toString(x), Integer.toString(y));
+    }
+
+    /**
+     * 叠加并可指定 {@code shortest}：{@code shortest=true} 时追加 {@code shortest=1}，使输出在最短输入结束时收尾。
+     * 用于以 {@code -loop 1} 无限循环的图片/水印输入（否则叠加图会令输出无限循环）。{@code x}/{@code y} 接受表达式。
+     */
+    public static VideoStream overlay(VideoStream base, VideoStream over, String x, String y, boolean shortest) {
+        List<Arg> args = new ArrayList<>();
+        args.add(Arg.of("x", x));
+        args.add(Arg.of("y", y));
+        if (shortest) {
+            args.add(Arg.of("shortest", "1"));
+        }
+        return video("overlay", args, base, over);
     }
 
     /** 截取 [start,end] 秒；自动追加 {@code setpts=PTS-STARTPTS} 重基时间线。 */
@@ -230,6 +264,16 @@ public final class Filters {
     public static VideoStream rawFilterVideo(VideoStream in, String rawFilter) {
         return new VideoStream(new Origin.FilterOrigin(
                 new FilterNode(rawFilter, List.of(), List.of(in), List.of(MediaType.VIDEO)), 0));
+    }
+
+    /**
+     * 2 输入的原始视频滤镜逃生舱：{@code base} 为主输入、{@code over} 为叠加输入，{@code rawFilter} 逐字下发。
+     * 与单输入版对称，解锁任意多输入滤镜（如复杂水印 {@code overlay=shortest=1:x=if(...)}）。内容不参与类型
+     * 校验与转义——正确性与必要的 filtergraph 转义（含表达式逗号 {@code \,}）由调用方自负。
+     */
+    public static VideoStream rawFilterVideo(VideoStream base, VideoStream over, String rawFilter) {
+        return new VideoStream(new Origin.FilterOrigin(
+                new FilterNode(rawFilter, List.of(), List.of(base, over), List.of(MediaType.VIDEO)), 0));
     }
 
     public static AudioStream rawFilterAudio(AudioStream in, String rawFilter) {
