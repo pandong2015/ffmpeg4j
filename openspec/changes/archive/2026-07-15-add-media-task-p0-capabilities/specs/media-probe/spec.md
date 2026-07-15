@@ -1,39 +1,4 @@
-# media-probe Specification
-
-## Purpose
-
-以 `ffprobe -print_format json` 读取媒体元数据并解析为结构化 `ProbeResult`：至少暴露容器级信息（格式、时长、总码率）与每条流的信息（类型 video/audio/subtitle、编解码器、分辨率、帧率、采样率、声道等）。JSON 解析 MUST 使用极轻量依赖或自研微型解析器，`ffmpeg4j-core` 不引入重型 JSON 库；probe 失败以携带 `ffprobe` 失败信息的可诊断错误上抛。
-
-## Requirements
-
-### Requirement: 基于 ffprobe 的媒体元数据读取
-库 SHALL 提供通过 `ffprobe` 读取媒体元数据的能力，至少暴露容器级信息（格式、时长、总码率）与每条流的信息（流类型 video/audio/subtitle、编解码器、分辨率、帧率、采样率、声道等）。
-
-#### Scenario: 读取含音视频的文件元数据
-- **WHEN** 用户对一个含视频轨与音频轨的文件调用 probe
-- **THEN** 返回结构化结果，包含时长、各流的类型与编解码器等字段
-
-#### Scenario: 探测识别字幕流
-- **WHEN** 用户 probe 一个内嵌字幕轨的容器
-- **THEN** 结果中该轨的流类型被标识为 subtitle
-
-### Requirement: 轻量 JSON 解析与依赖约束
-`ffprobe` 输出的 JSON MUST 使用极轻量第三方依赖（如 minimal-json/org.json）或自研微型 recursive-descent 解析器解析；`ffmpeg4j-core` MUST NOT 引入重型 JSON 库（如 Jackson）。JDK 不含公开受支持的 JSON 解析 API，故不作为选项。
-
-#### Scenario: core 不含重型 JSON 依赖
-- **WHEN** 检视 `ffmpeg4j-core` 的依赖树
-- **THEN** 不存在 Jackson 等重型 JSON 库
-
-### Requirement: probe 失败的结构化错误
-当 `ffprobe` 无法解析目标（文件不存在或非法媒体）时，probe MUST 抛出可诊断错误，携带 `ffprobe` 的失败信息。
-
-#### Scenario: 对不存在的文件 probe
-- **WHEN** 用户对一个不存在的路径调用 probe
-- **THEN** 抛出清晰错误说明文件不可读/不存在，而非返回空结果
-
-#### Scenario: 对非法媒体 probe
-- **WHEN** 用户对一个内容损坏/非媒体文件调用 probe
-- **THEN** 抛出携带 `ffprobe` 失败信息的可诊断错误
+## ADDED Requirements
 
 ### Requirement: 流级扩展字段（Info 回调白名单 + SAR/DAR + disposition/tags）
 `StreamInfo` MUST 扩展覆盖 Info 回调白名单所需的流级字段，至少包含：`profile`、`codecTag`（`codec_tag_string`）、`hasBFrames`（`has_b_frames`，`Integer`）、`pixelFormat`（`pix_fmt`）、`level`（`Integer`）、`timeBase`（`time_base`）、`startTimeSeconds`（`start_time`，`double`）、`durationSeconds`（`duration`，`double`）、`bitRate`（`bit_rate`，`long`）、`nbFrames`（`nb_frames`，`long`）、`sampleFormat`（`sample_fmt`）、`channelLayout`（`channel_layout`）。命名对齐既有 `FormatInfo.durationSeconds`/`bitRate`/`nbStreams`（秒值统一 `xxxSeconds`、计数统一 `nbXxx`）。此外 MUST 收：`sampleAspectRatio`（`sample_aspect_ratio`）、`displayAspectRatio`（`display_aspect_ratio`）、`attachedPic`（`boolean`，取自嵌套 `disposition.attached_pic == 1`）、`language`（取自嵌套 `tags.language`）。这些字段 MUST 由 `ProbeMapper` 从 ffprobe JSON 的对应键（含嵌套对象）映射；某字段在 JSON 中缺失时 MUST 以 `null`（对象类型）/`false`（`attachedPic`）/既有哨兵填充，MUST NOT 因缺字段而失败。字段的类型专属性（视频专属如 `pixelFormat`/`level`/`hasBFrames`；音频专属如 `sampleFormat`/`channelLayout`）遵循 ffprobe 语义，不适用者为 `null`。数字型宽松解析（ffprobe 常把数字写成带引号字符串）复用既有 `JsonValue.asLong/asDouble`。
