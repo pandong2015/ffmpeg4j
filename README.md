@@ -16,7 +16,7 @@
 - **不可变「流即值」编排** —— `Input`/`Stream`/滤镜/`Output`，音视频字幕三态对称；滤镜是纯函数 `Stream → Stream`，同一 `Stream` 可被引用任意次（值语义）。
 - **图编译器** —— 把流引用图编译成 `ffmpeg` 命令行：引用计数侦测扇出、**自动插入 `split`/`asplit`**、拓扑排序分配 pad 名、去重、编译期类型/连接校验。
 - **稳健执行引擎** —— IO 拓扑自适应进度通道（`-progress pipe:1`/`tcp://`）、每路输出必排空防死锁、优雅取消（`q`→SIGTERM→SIGKILL）、结构化 `FfmpegException`；`run()`/`runAsync()` 双 API。
-- **9 个一行式门面** + **19 个类型化 curated 滤镜** + **万能逃生舱**（未建模滤镜/原始 argv 自负正确性）。
+- **11 个一行式门面**（含 HLS 单码率切片 `hlsSegment` 与 ABR 多码率梯 `hlsAbr`，均可选 AES-128）+ **19 个类型化 curated 滤镜** + **万能逃生舱**（未建模滤镜/原始 argv 自负正确性）。
 - **结构化 probe**（`ffprobe -print_format json` → `ProbeResult`）。
 - **Spring Boot 3.x Starter** —— 注入 `FfmpegClient`、`application.yml` 配置、Actuator 健康/信息、Micrometer 指标。
 - **core 零重型依赖**（JSON 自研微解析器，无 Jackson/Spring），可在无头/裁剪 JRE 运行。
@@ -61,7 +61,7 @@ implementation("io.github.pandong2015:ffmpeg4j-core:1.2.0")
 
 ## 🚀 快速上手
 
-### 普通 Java —— 9 个一行式门面
+### 普通 Java —— 11 个一行式门面
 
 ```java
 import io.github.pandong2015.ffmpeg4j.facade.Ffmpeg;
@@ -72,10 +72,12 @@ Ffmpeg.remux(new File("in.mkv"), new File("out.mp4"));                       // 
 Ffmpeg.clip(new File("in.mp4"), new File("out.mp4"), 1.0, 3.0);             // 截段
 Ffmpeg.thumbnail(new File("in.mp4"), new File("thumb.png"), 5.0);          // 抓帧
 Ffmpeg.gif(new File("in.mp4"), new File("out.gif"));                        // 生成 GIF
+Ffmpeg.hlsSegment(new File("in.mp4"), new File("out"));                     // HLS 单码率 VOD 切片
+Ffmpeg.hlsAbr(new File("in.mp4"), new File("out"));                        // HLS ABR 多码率梯（恒转码）
 double sec = Ffmpeg.probe(new File("in.mp4")).durationSeconds();            // 探测
 ```
 
-> 九门面：`transcode` / `remux` / `clip` / `extractAudio` / `thumbnail` / `gif` / `concat` / `burnSubtitles` / `probe`，各含 `XxxOptions` 进阶重载。
+> 十一门面：`transcode` / `remux` / `clip` / `extractAudio` / `thumbnail` / `gif` / `concat` / `burnSubtitles` / `hlsSegment` / `hlsAbr` / `probe`，各含 `XxxOptions` 进阶重载。
 
 ### 自由组合 ——「流即值」+ 自动 `split`
 
@@ -125,7 +127,7 @@ public class VideoService {
 
 | 文档 | 内容 |
 |------|------|
-| **[USAGE.md](./USAGE.md)** | **完整使用指南**：九门面 · `XxxOptions` · 异步/取消 · 进度回调 · probe · 低层组合（overlay/drawText/burnSubtitles/扇出/多输出）· 逃生舱 · 错误处理 · Spring Boot 全套 · 常见任务速查 |
+| **[USAGE.md](./USAGE.md)** | **完整使用指南**：十一门面（含 HLS 切片/ABR） · `XxxOptions` · 异步/取消 · 进度回调 · probe · 低层组合（overlay/drawText/burnSubtitles/扇出/多输出）· 逃生舱 · 错误处理 · Spring Boot 全套 · 常见任务速查 |
 | [CHANGELOG.md](./CHANGELOG.md) | 版本变更 |
 | [LICENSE](./LICENSE) / [NOTICE](./NOTICE) | Apache-2.0 全文 + 归属声明 |
 
@@ -148,7 +150,7 @@ mvn test          # 三模块反应堆：全部单元 + 集成测试
 - **pipe 输入模式无法优雅取消**（stdin 被占，降级 SIGTERM）；v1.0 门面均写盘，影响小。
 - **进度回调默认在 pump 线程同步触发，必须非阻塞**——重活用 `callbackExecutor`（Spring 下自动接 `TaskExecutor`）。
 - 版本 < 4.2 仅告警不硬失败；仅二进制缺失才硬错。
-- v1.0 不含帧进出 JVM、硬件加速一等支持、HLS/DASH——靠逃生舱兜底。
+- HLS VOD 已支持（`hlsSegment` 单码率切片 + `hlsAbr` ABR 多码率梯，均可选 AES-128）；不含帧进出 JVM、硬件加速一等支持、DASH/fMP4/live——靠逃生舱兜底。
 
 ---
 

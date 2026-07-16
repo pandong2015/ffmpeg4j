@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 
 import io.github.pandong2015.ffmpeg4j.FfmpegException;
 import io.github.pandong2015.ffmpeg4j.compiler.CompiledCommand;
@@ -235,6 +236,246 @@ final class FacadeSupport {
                 continue;
             }
             result.add(line);
+        }
+        return result;
+    }
+
+    // ===== HLS ABR 多码率梯 VOD（纯函数产 argv；probe 裁剪/写盘/解析在 FfmpegClient）=====
+
+    /**
+     * 构建 ABR 多码率梯 VOD 的 argv（纯函数、脱进程可断言）。走<b>路线 A</b>：同一 {@code input.video()} 被 N 档
+     * {@code scale+setsar} 消费 → 编译器自动 {@code split=N} 扇出。{@code o.variants()} 须为门面<em>已按源高度裁剪</em>
+     * 的显式梯（本函数不 probe）。
+     *
+     * <p>产 argv：逐档 {@code -c:v:N}/{@code -b:v:N}/{@code -maxrate:v:N}/{@code -bufsize:v:N}（可选 crf/preset）、
+     * 音频（agroup 单路 {@code -c:a:0}/{@code -b:a}；非 agroup 逐档 {@code -c:a:N}/{@code -b:a:N}）、{@code -var_stream_map}、
+     * {@code -master_pl_name}、{@code -f hls} + VOD 双标签 + {@code -hls_segment_filename outDir/%v/<模板>}、<b>恒</b>
+     * {@code -force_key_frames}（跨档对齐）、AES {@code -hls_key_info_file}。<b>默认不注入 {@code -hls_base_url}</b>。
+     * 输出 playlist 路径用<b>字面 {@code %v}</b>（ffmpeg 按 {@code name:}/数字索引替换）。
+     */
+    static CompiledCommand buildHlsAbr(File in, File outDir, HlsAbrOptions o, Path keyInfoFile) {
+        Objects.requireNonNull(outDir, "outDir 不能为 null");
+        List<HlsVariant> variants = o.variants();
+        int n = variants.size();
+        if (n == 0) {
+            throw new IllegalArgumentException("ABR 码率梯不能为空");
+        }
+        // build 期 fail-fast：段模板须含序号占位；解析后的变体目录名须唯一（否则各档写同目录互相覆盖）。
+        if (!SEGMENT_INDEX_ABR.matcher(o.segmentTemplate()).find()) {
+            throw new IllegalArgumentException("segmentTemplate 须含序号占位符 %d/%0Nd，实际 " + o.segmentTemplate());
+        }
+        resolveVariantDirNames(variants); // fail-fast：变体目录名须唯一（门面另用同一真源做 mkdir/解析）
+
+        Input input = Input.of(in);
+        VideoStream v = input.video();     // ABR 路线 A 必有视频轨（无视频轨由门面 probe 提前 fail-fast）
+        AudioStream audio = input.audio(); // agroup 与每档模式均需音轨
+
+        List<Stream> mapped = new ArrayList<>();
+        List<String> args = new ArrayList<>();
+        List<String> vsm = new ArrayList<>();
+        boolean shared = o.sharedAudio();
+        String groupId = "aud";
+
+        if (shared) {
+            // agroup：N 个视频档在前、单路音频在末。mapped 次序 = var_stream_map 输出下标次序（D10 契约）。
+            for (int i = 0; i < n; i++) {
+                mapped.add(scaledSetsar(v, variants.get(i)));
+            }
+            mapped.add(audio);
+            for (int i = 0; i < n; i++) {
+                addVideoArgs(args, i, variants.get(i));
+            }
+            args.add("-c:a:0");
+            args.add(variants.get(0).audioCodec());
+            args.add("-b:a");
+            args.add(o.audioBitrate());
+            for (int i = 0; i < n; i++) {
+                StringBuilder e = new StringBuilder("v:").append(i).append(",agroup:").append(groupId);
+                if (variants.get(i).name() != null) {
+                    e.append(",name:").append(variants.get(i).name());
+                }
+                vsm.add(e.toString());
+            }
+            vsm.add("a:0,agroup:" + groupId + ",name:audio,default:yes");
+        } else {
+            // 每档独立音频：mapped 交错 v0,a0,v1,a1…；音频同一值被 N 次消费 → 渲染 N 次 -map 0:a:0（不插 asplit）。
+            for (int i = 0; i < n; i++) {
+                mapped.add(scaledSetsar(v, variants.get(i)));
+                mapped.add(audio);
+            }
+            for (int i = 0; i < n; i++) {
+                addVideoArgs(args, i, variants.get(i));
+                args.add("-c:a:" + i);
+                args.add(variants.get(i).audioCodec());
+                args.add("-b:a:" + i);
+                args.add(variants.get(i).audioBitrate());
+            }
+            for (int i = 0; i < n; i++) {
+                StringBuilder e = new StringBuilder("v:").append(i).append(",a:").append(i);
+                if (variants.get(i).name() != null) {
+                    e.append(",name:").append(variants.get(i).name());
+                }
+                vsm.add(e.toString());
+            }
+        }
+
+        args.add("-f");
+        args.add("hls");
+        args.add("-hls_time");
+        args.add(num(o.hlsTime()));
+        // VOD 语义双标签固定注入。
+        args.add("-hls_playlist_type");
+        args.add("vod");
+        args.add("-hls_list_size");
+        args.add("0");
+        args.add("-hls_segment_type");
+        args.add("mpegts");
+        if (o.startNumber() != 0) {
+            args.add("-start_number");
+            args.add(Integer.toString(o.startNumber()));
+        }
+        // 段文件名用字面 %v 子目录（ffmpeg 按 name:/数字索引替换）；每档段与 playlist 共位。
+        args.add("-hls_segment_filename");
+        args.add(new File(outDir, "%v/" + o.segmentTemplate()).getPath());
+        args.add("-master_pl_name");
+        args.add(o.masterPlaylistName());
+        args.add("-var_stream_map");
+        args.add(String.join(" ", vsm));
+        // 恒注入跨档关键帧对齐（无缝切码率的正确性前提，一条覆盖全档；复用单一真源 forceKeyFramesArgs）。
+        args.addAll(forceKeyFramesArgs(o.hlsTime()));
+        if (o.key() != null) {
+            Objects.requireNonNull(keyInfoFile, "启用 AES 时 keyInfoFile 路径不能为 null");
+            args.add("-hls_key_info_file");
+            args.add(keyInfoFile.toString());
+        }
+        // 逃生舱：置于类型化 -hls_* 之后（同键 ffmpeg 取后者）；内容不参与类型校验。
+        args.addAll(o.extraOutputArgs());
+
+        // 输出 playlist 路径字面 %v；每档落 outDir/<解析目录>/index.m3u8。
+        Output output = Output.to(new File(outDir, "%v/index.m3u8"), mapped.toArray(new Stream[0]))
+                .withArgs(args.toArray(new String[0]));
+        return new GraphCompiler().compile(output);
+    }
+
+    /**
+     * 解析每档的<b>变体目录名</b>（{@link HlsVariant#name()} 给值即用之，否则数字索引 {@code 0/1/2}）——单一真源，
+     * 同时驱动 {@code var_stream_map name:}、{@code Files.createDirectories}、master/各档 m3u8 解析路径、
+     * {@link HlsVariantResult#name()} 四处同名。目录名须唯一（否则各档写同目录互相覆盖 → build 期 fail-fast）。
+     */
+    static List<String> resolveVariantDirNames(List<HlsVariant> variants) {
+        List<String> names = new ArrayList<>(variants.size());
+        for (int i = 0; i < variants.size(); i++) {
+            String name = variants.get(i).name();
+            names.add(name != null ? name : Integer.toString(i));
+        }
+        long distinct = names.stream().distinct().count();
+        if (distinct != names.size()) {
+            throw new IllegalArgumentException("变体目录名冲突（显式 name 与数字索引碰撞）：" + names);
+        }
+        return List.copyOf(names);
+    }
+
+    /** 一档变体的视频编码参数（按输出视频下标 {@code N}）：{@code -c:v:N}/{@code -b:v:N}/{@code -maxrate:v:N}/{@code -bufsize:v:N}（可选 crf/preset）。 */
+    private static void addVideoArgs(List<String> args, int i, HlsVariant var) {
+        args.add("-c:v:" + i);
+        args.add(var.videoCodec());
+        args.add("-b:v:" + i);
+        args.add(var.videoBitrate());
+        args.add("-maxrate:v:" + i);
+        args.add(var.effectiveMaxrate());
+        args.add("-bufsize:v:" + i);
+        args.add(var.effectiveBufsize());
+        if (var.crf() != null) {
+            args.add("-crf:v:" + i);
+            args.add(var.crf().toString());
+        }
+        if (var.preset() != null) {
+            args.add("-preset:v:" + i);
+            args.add(var.preset());
+        }
+    }
+
+    /** 一档的视频链：{@code scale=(width|-2):height} → {@code setsar=1}（MUST 含 setsar，项目归一化约定）。 */
+    private static VideoStream scaledSetsar(VideoStream v, HlsVariant var) {
+        int w = var.width() != null ? var.width() : -2;
+        VideoStream scaled = Filters.scale(v, w, var.height());
+        // setsar 非公共 curated 滤镜（归一化内部滤镜），经原始滤镜逃生舱接线 setsar=1。
+        return Filters.rawFilterVideo(scaled, "setsar=1");
+    }
+
+    // ===== HLS ABR master 解析（纯函数，供 FfmpegClient 装配结果）=====
+
+    /** master 的一条 {@code #EXT-X-STREAM-INF} + 其后紧邻的 URI 行。 */
+    record MasterVariant(long bandwidth, int width, int height, String uri) {
+    }
+
+    /** master 的一条 {@code #EXT-X-MEDIA:TYPE=AUDIO}（agroup 音频 rendition）。 */
+    record MasterAudio(String groupId, String uri) {
+    }
+
+    private static final Pattern BANDWIDTH_ATTR = Pattern.compile("[^-]BANDWIDTH=(\\d+)");
+    private static final Pattern RESOLUTION_ATTR = Pattern.compile("RESOLUTION=(\\d+)x(\\d+)");
+    private static final Pattern GROUP_ID_ATTR = Pattern.compile("GROUP-ID=\"([^\"]*)\"");
+    private static final Pattern URI_ATTR = Pattern.compile("URI=\"([^\"]*)\"");
+    private static final Pattern SEGMENT_INDEX_ABR = Pattern.compile("%[0-9]*d");
+
+    /**
+     * 解析 master 的各 {@code #EXT-X-STREAM-INF}（{@code BANDWIDTH}/{@code RESOLUTION} + 其后 URI 行），按出现顺序。
+     * <b>引号感知/定向正则</b>：{@code BANDWIDTH=(\d+)}/{@code RESOLUTION=(\d+)x(\d+)}——避开 {@code CODECS} 值内含逗号
+     * 对朴素 {@code split(',')} 的误分割。{@code RESOLUTION} 缺失时 width/height 记 0。
+     */
+    static List<MasterVariant> parseMasterVariants(String masterContent) {
+        List<MasterVariant> result = new ArrayList<>();
+        String[] lines = masterContent.split("\n");
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i].strip();
+            if (!line.startsWith("#EXT-X-STREAM-INF")) {
+                continue;
+            }
+            long bandwidth = 0;
+            var bm = BANDWIDTH_ATTR.matcher(" " + line); // 前置空格使 [^-] 能匹配 AVERAGE-BANDWIDTH 之外的 BANDWIDTH
+            if (bm.find()) {
+                bandwidth = Long.parseLong(bm.group(1));
+            }
+            int width = 0;
+            int height = 0;
+            var rm = RESOLUTION_ATTR.matcher(line);
+            if (rm.find()) {
+                width = Integer.parseInt(rm.group(1));
+                height = Integer.parseInt(rm.group(2));
+            }
+            // 其后首个非注释非空行 = 变体 URI。
+            String uri = null;
+            for (int j = i + 1; j < lines.length; j++) {
+                String u = lines[j].strip();
+                if (u.isEmpty() || u.startsWith("#")) {
+                    continue;
+                }
+                uri = u;
+                break;
+            }
+            if (uri != null) {
+                result.add(new MasterVariant(bandwidth, width, height, uri));
+            }
+        }
+        return result;
+    }
+
+    /** 解析 master 的 {@code #EXT-X-MEDIA:TYPE=AUDIO} 行（{@code GROUP-ID}/{@code URI}），无则空 List。 */
+    static List<MasterAudio> parseMasterAudioMedia(String masterContent) {
+        List<MasterAudio> result = new ArrayList<>();
+        for (String raw : masterContent.split("\n")) {
+            String line = raw.strip();
+            if (!line.startsWith("#EXT-X-MEDIA") || !line.contains("TYPE=AUDIO")) {
+                continue;
+            }
+            var gm = GROUP_ID_ATTR.matcher(line);
+            var um = URI_ATTR.matcher(line);
+            String groupId = gm.find() ? gm.group(1) : null;
+            String uri = um.find() ? um.group(1) : null;
+            if (uri != null) {
+                result.add(new MasterAudio(groupId, uri));
+            }
         }
         return result;
     }
