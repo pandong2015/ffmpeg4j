@@ -161,5 +161,7 @@ type1 转码所需的**滤镜链与码控能力**（纯 additive、无 videoFilt
 
 - **1.0.0** 已 GPG 签名并部署至 **Maven Central**（2026-07-14）；`pom.xml` 的 `<scm>`/`<url>` 已为真实仓库地址。
 
+[1.4.0]: https://github.com/pandong2015/ffmpeg4j/releases/tag/v1.4.0
+[1.3.0]: https://github.com/pandong2015/ffmpeg4j/releases/tag/v1.3.0
 [1.2.0]: https://github.com/pandong2015/ffmpeg4j/releases/tag/v1.2.0
 [1.0.0]: https://github.com/pandong2015/ffmpeg4j/releases/tag/v1.0.0
