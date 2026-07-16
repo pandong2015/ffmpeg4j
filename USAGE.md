@@ -1,6 +1,6 @@
 # ffmpeg4j 使用说明
 
-一份从「装依赖」到「Spring Boot 集成」的完整上手指南。术语与示例均对齐当前实现（`1.4.0`，已发布至 Maven Central）。
+一份从「装依赖」到「Spring Boot 集成」的完整上手指南。术语与示例均对齐当前实现（`1.5.0`，已发布至 Maven Central）。
 
 > 速览：普通 Java 项目引 **`ffmpeg4j-core`**，用静态门面 `Ffmpeg.xxx(...)` 一行式完成常见任务；
 > Spring Boot 项目引 **`ffmpeg4j-spring-boot-starter`**，注入 `FfmpegClient` bean、配置走 `application.yml`。
@@ -13,7 +13,7 @@
 2. [前置条件](#2-前置条件)
 3. [安装](#3-安装)
 4. [30 秒上手](#4-30-秒上手)
-5. [八个门面](#5-八个门面)
+5. [十一个门面](#5-十一个门面)
 6. [进阶选项 XxxOptions](#6-进阶选项-xxxoptions)
 7. [异步与取消](#7-异步与取消)
 8. [probe：结构化元数据](#8-probe结构化元数据)
@@ -58,7 +58,7 @@ ffprobe -version
 
 ## 3. 安装
 
-已发布到 **Maven Central**（groupId `io.github.pandong2015`），**无需额外仓库配置**。当前版本 **`1.4.0`**。
+已发布到 **Maven Central**（groupId `io.github.pandong2015`），**无需额外仓库配置**。当前版本 **`1.5.0`**。
 
 ### 普通 Java 项目
 
@@ -67,13 +67,13 @@ ffprobe -version
 <dependency>
     <groupId>io.github.pandong2015</groupId>
     <artifactId>ffmpeg4j-core</artifactId>
-    <version>1.4.0</version>
+    <version>1.5.0</version>
 </dependency>
 ```
 
 **Gradle**（Kotlin DSL）
 ```kotlin
-implementation("io.github.pandong2015:ffmpeg4j-core:1.4.0")
+implementation("io.github.pandong2015:ffmpeg4j-core:1.5.0")
 ```
 
 ### Spring Boot 项目
@@ -83,13 +83,13 @@ implementation("io.github.pandong2015:ffmpeg4j-core:1.4.0")
 <dependency>
     <groupId>io.github.pandong2015</groupId>
     <artifactId>ffmpeg4j-spring-boot-starter</artifactId>
-    <version>1.4.0</version>
+    <version>1.5.0</version>
 </dependency>
 ```
 
 **Gradle**（Kotlin DSL）
 ```kotlin
-implementation("io.github.pandong2015:ffmpeg4j-spring-boot-starter:1.4.0")
+implementation("io.github.pandong2015:ffmpeg4j-spring-boot-starter:1.5.0")
 ```
 
 > starter 传递引入 `ffmpeg4j-core`，无需再单独声明。可观测依赖（actuator/micrometer）为可选，见 [§13](#13-spring-boot-集成)。
@@ -140,7 +140,7 @@ double seconds = Ffmpeg.probe(new File("in.mp4")).durationSeconds();
 | `transcode` | `transcode(in, out, videoCodec, audioCodec)` | 强制转码 |
 | `remux` | `remux(in, out)` | 换容器，尽量不重编码；文本字幕转 `mov_text`、图形字幕丢弃 |
 | `clip` | `clip(in, out, startSec, endSec)` | 无歧义 `-ss start -t (end-start)` 截取 |
-| `extractAudio` | `extractAudio(in, out)` | 按扩展名推导是否重编码，`-map 0:a` 避开封面图；可选 `-ar`/`-ac` |
+| `extractAudio` | `extractAudio(in, out)` | 按扩展名推导是否重编码，`-map 0:a:0` 取首音轨避开封面图；可选 `-ar`/`-ac` |
 | `thumbnail` | `thumbnail(in, out, atSec)` | 指定时间点抓帧；`seekMode` 可选输入侧快 seek / 输出侧精确 |
 | `gif` | `gif(in, out)` | 两遍调色板法生成 GIF（编译器自动 `split` 菱形） |
 | `concat` | `concat(List<File> ins, out)` | 前置归一化（含 setsar）+ 异构流集合注入静音/纯色或可诊断拒绝 |
@@ -232,9 +232,19 @@ TranscodeOptions t1 = TranscodeOptions.defaults()
                 "W-w-6", "H-h-6", true));                                    // 右下角、shortest 收尾
 Ffmpeg.transcode(new File("in.mp4"), new File("out.mp4"), t1);
 
-// libx265 的 VBV 走 extraOutputArgs（库不自动翻译 maxrate→x265-params）：
+// libx265 的 VBV：typed x265Params（库不自动翻译 maxrate→x265-params，显式 x265 通道）：
 TranscodeOptions h265 = TranscodeOptions.defaults().videoCodec("libx265")
-        .extraOutputArgs("-x265-params", "vbv-maxrate=2000:vbv-bufsize=4000");
+        .x265Params("vbv-maxrate=2000:vbv-bufsize=4000");
+
+// VBV 便利：vbv(maxrate) 自动派生 bufsize=maxrate×2（build 期依最终 maxrate 求值）：
+TranscodeOptions vbv = TranscodeOptions.defaults().vbv("2M");           // → -maxrate 2M -bufsize 4M
+
+// 音频重采样 -ar / 实验编码器 -strict：
+TranscodeOptions au = TranscodeOptions.defaults()
+        .audioCodec("aac").audioSampleRate(44100).strictExperimental();  // → -ar 44100 -strict -2
+
+// 纯视频（-an）；纯音频抽取请首选 Ffmpeg.extractAudio，disableVideo 仅用于从含视频源转码剥离视频：
+TranscodeOptions videoOnly = TranscodeOptions.defaults().disableAudio(true).videoCodec("libx264");
 ```
 
 > 复杂多输入 overlay 表达式（动/浮水印的 `if/mod/sin`，含转义逗号 `\,`）走 `Filters.rawFilterVideo(base, over, raw)`
@@ -243,7 +253,7 @@ TranscodeOptions h265 = TranscodeOptions.defaults().videoCodec("libx265")
 
 各门面对应 `TranscodeOptions` / `RemuxOptions` / `ClipOptions` / `ExtractAudioOptions` / `ThumbnailOptions` /
 `GifOptions` / `ConcatOptions` / `BurnSubtitlesOptions`，均含各自的特定项与执行侧的 `onProgress` / `timeout`。
-特定项举例：`TranscodeOptions.videoFilter/fps/maxrate/bufsize/gop/extraOutputArgs`（滤镜链 + 码控）、
+特定项举例：`TranscodeOptions.videoFilter/fps/maxrate/bufsize/gop/vbv/x265Params/audioSampleRate/strict(Experimental)/disableVideo/disableAudio/extraOutputArgs`（滤镜链 + 码控 + 流禁用）、
 `ExtractAudioOptions.sampleRate/channels`（`-ar`/`-ac`，设定即禁用 copy）、
 `ThumbnailOptions.seekMode`（`INPUT_FAST` 默认 / `OUTPUT_ACCURATE` 精确）、
 `GifOptions.start/duration/fps/width/height/scaleFlags`。
@@ -305,7 +315,9 @@ for (StreamInfo a : probe.audioStreams()) {
 `sampleFormat` / `channelLayout` / `timeBase` / `startTimeSeconds` / `durationSeconds` / `bitRate` /
 `nbFrames` / `sampleAspectRatio` / `displayAspectRatio` / `attachedPic`（封面图流）/ `language`
 （视频/音频专属字段在另一类型上为 `null`）+ `isVideo()/isAudio()/isSubtitle()` + `avgFrameRateFps()/rFrameRateFps()`。
-`FormatInfo` 另含 `nbPrograms` / `startTimeSeconds`。
+另有**原始保真字段** `codecTagHex`（原始 `codec_tag` 十六进制，与 `codecTag`=`codec_tag_string` 并列）/ `rawStartTime` / `rawDuration`
+（`start_time`/`duration` 的原始定点串，byte-exact、**缺失→`null`**，据此区分「真实 0」与「缺失」；既有 `startTimeSeconds`/`durationSeconds` 的 `0.0` 哨兵语义不变）。
+`FormatInfo` 另含 `nbPrograms` / `startTimeSeconds`，及原始保真串 `rawStartTime` / `rawDuration`。
 
 失败路径（文件不存在 / 非法媒体）抛携 ffprobe 失败信息的 `FfmpegException`。
 
@@ -375,8 +387,9 @@ VideoStream logo = Input.of("logo.png").video();
 VideoStream out  = Filters.overlay(base, logo, "W-w-10", "10"); // 右上角
 ```
 
-16 个 curated 类型化滤镜：视频 `scale`/`crop`/`pad`/`overlay`/`trim`/`fps`/`format`/`fade`/`drawText`，
-音频 `volume`/`amix`/`atrim`/`atempo`/`afade`，双型 `concat`，字幕烧录 `burnSubtitles`/`burnAss`。
+21 个 curated 类型化滤镜：视频 `scale`/`crop`/`pad`/`padToEven`/`overlay`/`trim`/`fps`/`format`/`fade`/`drawText`，
+音频 `volume`/`amix`/`atrim`/`atempo`/`afade`，GIF 调色板 `paletteGen`/`paletteUse`，拼接 `concatVideo`/`concatAudio`，
+字幕烧录 `burnSubtitles`/`burnAss`（另有 2 个 `rawFilterVideo`/`rawFilterAudio` 逃生舱，不计入 curated）。
 `split`/`setpts`/`aresample` 等归一化滤镜由编译器**内部**处理，不作 curated 暴露。
 
 ---
