@@ -543,10 +543,10 @@ Spring Boot 下改用 `ffmpeg4j.ffmpeg-path` / `ffmpeg4j.ffprobe-path`（见 [§
 
 ## 16. 已知约束
 
-1. **pipe 输入无法优雅取消**：stdin 被输入媒体占用，写不进 `q`，取消降级为 SIGTERM。v1.0 门面均写盘（stdin 空闲，优雅取消可用）。
+1. **pipe 输入无法优雅取消**：stdin 被输入媒体占用，写不进 `q`，取消降级为 SIGTERM。各门面均写盘（stdin 空闲，优雅取消可用）。
 2. **进度回调默认在 pump 线程同步触发，必须非阻塞**——重活用 `callbackExecutor`。
 3. **版本 <4.2 仅告警不硬失败**；仅二进制缺失才硬错。
-4. **v1.0 范围**：不含帧进出 JVM、硬件加速一等支持、HLS/DASH、字幕高级样式——这些靠逃生舱兜底。
+4. **当前范围**（截至 1.5.0）：HLS VOD 已支持（`hlsSegment` 单码率 / `hlsAbr` ABR 多码率梯，均含可选 AES-128）；暂不含帧进出 JVM、硬件加速一等支持、DASH/LL-HLS、字幕高级样式——这些靠逃生舱兜底。
 5. **构建 / 覆盖率**：库在任意 JDK ≥17 上可运行；生成 JaCoCo 覆盖率报告需用 **JDK 17 或 21**（JaCoCo 0.8.12 不支持 JDK ≥23 插桩）。
 
 ---
