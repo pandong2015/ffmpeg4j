@@ -37,6 +37,11 @@ import io.github.pandong2015.ffmpeg4j.model.MediaType;
  * @param displayAspectRatio {@code display_aspect_ratio}（DAR），如 {@code "4:3"}；缺失为 {@code null}
  * @param attachedPic       是否为封面图流（{@code disposition.attached_pic == 1}）；缺失为 {@code false}
  * @param language          {@code tags.language}，如 {@code "und"}/{@code "eng"}；缺失为 {@code null}
+ * @param codecTagHex       原始 {@code codec_tag} 十六进制串，如 {@code "0x31637661"}（与 {@code codecTag}=
+ *                          {@code codec_tag_string} 并列，供须逐位复刻的下游）；缺失为 {@code null}
+ * @param rawStartTime      {@code start_time} 的<em>原始定点串</em>，如 {@code "0.000000"}（byte-exact 保留精度与
+ *                          尾零；缺失为 {@code null}，据此可区分「真实 0」与「缺失」——异于 {@code startTimeSeconds} 的 {@code 0.0} 哨兵）
+ * @param rawDuration       {@code duration} 的<em>原始定点串</em>；byte-exact；缺失为 {@code null}
  */
 public record StreamInfo(
         int index,
@@ -64,19 +69,41 @@ public record StreamInfo(
         String sampleAspectRatio,
         String displayAspectRatio,
         boolean attachedPic,
-        String language) {
+        String language,
+        String codecTagHex,
+        String rawStartTime,
+        String rawDuration) {
 
     /**
      * 便捷构造器：保留 v1.0 的 10 参签名（index/type/codec/分辨率/帧率/采样率/声道），新字段取缺失默认
      * （对象型 {@code null}、秒值 {@code 0.0}、{@code bitRate}/{@code nbFrames} 为 {@code -1}、{@code attachedPic}
-     * 为 {@code false}）。使既有直接构造点（含测试）无需改动即可编译，扩字段保持源码兼容。
+     * 为 {@code false}，原始保真串 {@code codecTagHex}/{@code rawStartTime}/{@code rawDuration} 为 {@code null}）。
+     * 使既有直接构造点（含测试）无需改动即可编译，扩字段保持源码兼容。
      */
     public StreamInfo(int index, MediaType type, String codecName, String codecLongName,
                       Integer width, Integer height, String avgFrameRate, String rFrameRate,
                       Integer sampleRate, Integer channels) {
         this(index, type, codecName, codecLongName, width, height, avgFrameRate, rFrameRate,
                 sampleRate, channels,
-                null, null, null, null, null, null, 0.0, 0.0, -1L, -1L, null, null, null, null, false, null);
+                null, null, null, null, null, null, 0.0, 0.0, -1L, -1L, null, null, null, null, false, null,
+                null, null, null);
+    }
+
+    /**
+     * 便捷构造器：保留「原始保真字段扩充前」的 26 参签名，新增的 {@code codecTagHex}/{@code rawStartTime}/
+     * {@code rawDuration} 取 {@code null}。使既有满参构造点（含测试）无需改动即可编译。
+     */
+    public StreamInfo(int index, MediaType type, String codecName, String codecLongName,
+                      Integer width, Integer height, String avgFrameRate, String rFrameRate,
+                      Integer sampleRate, Integer channels, String profile, String codecTag,
+                      Integer hasBFrames, String pixelFormat, Integer level, String timeBase,
+                      double startTimeSeconds, double durationSeconds, long bitRate, long nbFrames,
+                      String sampleFormat, String channelLayout, String sampleAspectRatio,
+                      String displayAspectRatio, boolean attachedPic, String language) {
+        this(index, type, codecName, codecLongName, width, height, avgFrameRate, rFrameRate,
+                sampleRate, channels, profile, codecTag, hasBFrames, pixelFormat, level, timeBase,
+                startTimeSeconds, durationSeconds, bitRate, nbFrames, sampleFormat, channelLayout,
+                sampleAspectRatio, displayAspectRatio, attachedPic, language, null, null, null);
     }
 
     public boolean isVideo() {
