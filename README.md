@@ -147,7 +147,7 @@ mvn test          # 三模块反应堆：全部单元 + 集成测试
 
 ## ⚠️ 已知约束
 
-- **pipe 输入模式无法优雅取消**（stdin 被占，降级 SIGTERM）；v1.0 门面均写盘，影响小。
+- **pipe 输入模式无法优雅取消**（stdin 被占，降级 SIGTERM）；各门面均写盘，影响小。
 - **进度回调默认在 pump 线程同步触发，必须非阻塞**——重活用 `callbackExecutor`（Spring 下自动接 `TaskExecutor`）。
 - 版本 < 4.2 仅告警不硬失败；仅二进制缺失才硬错。
 - HLS VOD 已支持（`hlsSegment` 单码率切片 + `hlsAbr` ABR 多码率梯，均可选 AES-128）；不含帧进出 JVM、硬件加速一等支持、DASH/fMP4/live——靠逃生舱兜底。
