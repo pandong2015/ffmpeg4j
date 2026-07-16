@@ -131,7 +131,9 @@ double seconds = Ffmpeg.probe(new File("in.mp4")).durationSeconds();
 
 ---
 
-## 5. 九个门面
+## 5. 十一个门面
+
+（十个动作门面 + `probe`。）
 
 | 门面 | 便捷签名 | 说明 |
 |------|----------|------|
@@ -143,9 +145,36 @@ double seconds = Ffmpeg.probe(new File("in.mp4")).durationSeconds();
 | `gif` | `gif(in, out)` | 两遍调色板法生成 GIF（编译器自动 `split` 菱形） |
 | `concat` | `concat(List<File> ins, out)` | 前置归一化（含 setsar）+ 异构流集合注入静音/纯色或可诊断拒绝 |
 | `burnSubtitles` | `burnSubtitles(video, subtitle, out)` | 硬字幕烧录（需 libass） |
+| `hlsSegment` | `hlsSegment(in, outDir) → HlsResult` | 单码率 VOD HLS 切片（可选 AES-128）；产 `outDir/index.m3u8` + `ts/*.ts`（+ `key/enc.key`）。默认 `-c copy`；`alignKeyframes` 转码对齐段边界 |
+| `hlsAbr` | `hlsAbr(in, outDir) → HlsAbrResult` | ABR 多码率梯 VOD（可选 AES-128）；一入 N 档产 `outDir/master.m3u8` + 每档 `<目录>/index.m3u8`+段。**恒转码 + 恒跨档关键帧对齐**；默认梯按源高度裁剪；agroup 共享单音轨 |
 | `probe` | `probe(in) → ProbeResult` | 结构化元数据（无 Options 重载） |
 
 ```java
+// HLS 单码率 VOD 切片（直拷，快）
+HlsResult r = Ffmpeg.hlsSegment(new File("in.mp4"), new File("out"));
+// → out/index.m3u8 + out/ts/index0.ts...；r.segments() 为有序段路径
+
+// 带 AES-128（B2：调用方持密钥；key URI 明文进 m3u8，勿内嵌凭证）
+Ffmpeg.hlsSegment(new File("in.mp4"), new File("out"),
+        HlsOptions.defaults().key(HlsKey.of(keyBytes16, "https://keys.example/s.key")));
+// 或 B1 便利：HlsKey.random("https://keys.example/s.key")（SecureRandom 16 字节，字节可读回）
+
+// 均匀段（转码 + 关键帧对齐）；通用按秒关键帧亦可用于 transcode：
+Ffmpeg.hlsSegment(new File("in.mp4"), new File("out"),
+        HlsOptions.defaults().videoCodec("libx264").hlsTime(6.0).alignKeyframes(true));
+
+// HLS ABR 多码率梯（恒转码）：默认梯按源高度裁剪，产 master.m3u8 + 各档目录
+HlsAbrResult abr = Ffmpeg.hlsAbr(new File("in.mp4"), new File("out"));
+// → out/master.m3u8 + out/0|1|2/index.m3u8+段（+ agroup 时 out/audio/*）；abr.variants() 为各档结果
+// 分派建议：只要一档且直拷 → 用 hlsSegment（copy 快、无 master）；要转码 + master → 用 hlsAbr（即便 N=1）
+
+// 自定义梯 + AES-128（复用单码率 HlsKey；key/ 务必排除在 CDN 托管根之外）
+Ffmpeg.hlsAbr(new File("in.mp4"), new File("out"), HlsAbrOptions.defaults()
+        .variants(List.of(HlsVariant.of(1080, "5000k"), HlsVariant.of(720, "3000k").width(1280)))
+        .hlsTime(6.0)
+        .key(HlsKey.of(keyBytes16, "https://keys.example/abr.key")));
+// 注：ABR 省略 IV 时 ffmpeg 产 IV=0x00…00 跨段复用（异于单码率的段序号派生 IV）——单密钥模型，VOD 风险低
+
 // 拼接多段
 Ffmpeg.concat(List.of(new File("a.mp4"), new File("b.mp4")), new File("joined.mp4"));
 

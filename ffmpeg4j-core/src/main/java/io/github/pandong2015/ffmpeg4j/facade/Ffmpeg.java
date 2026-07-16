@@ -124,6 +124,28 @@ public final class Ffmpeg {
         return defaultClient().burnSubtitles(video, subtitle, out, options);
     }
 
+    // ===== 9. hlsSegment（单码率 VOD 切片 + 可选 AES-128）=====
+
+    public static HlsResult hlsSegment(File in, File outDir) {
+        return defaultClient().hlsSegment(in, outDir);
+    }
+
+    public static HlsResult hlsSegment(File in, File outDir, HlsOptions options) {
+        return defaultClient().hlsSegment(in, outDir, options);
+    }
+
+    // ===== 10. hlsAbr（ABR 多码率梯 VOD 恒转码 + 可选 AES-128）=====
+
+    /** 用默认梯（按源高度裁剪）产 ABR：{@code outDir/master.m3u8} + 每档 {@code <目录>/index.m3u8}+段。见 {@link FfmpegClient#hlsAbr}。 */
+    public static HlsAbrResult hlsAbr(File in, File outDir) {
+        return defaultClient().hlsAbr(in, outDir);
+    }
+
+    /** {@link #hlsAbr(File, File)} 的进阶重载（自定义码率梯/AES/agroup 等）。 */
+    public static HlsAbrResult hlsAbr(File in, File outDir, HlsAbrOptions options) {
+        return defaultClient().hlsAbr(in, outDir, options);
+    }
+
     // ===== 8. probe =====
 
     /**

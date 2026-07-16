@@ -2,6 +2,54 @@
 
 本文件记录 ffmpeg4j 各版本的显著变更。遵循「新增 / 变更 / 修复」分类，日期采用 ISO 8601。
 
+## [1.4.0] - 2026-07-16
+
+新增 **HLS ABR 多码率梯 VOD 门面**（可选 AES-128）。纯 additive，既有 argv 逐字节不变，`hlsSegment` 契约不动；core 仍零重型依赖。ABR 全链路在 ffmpeg 8.0.1 实测验证；4.2 为支持下限但未单独验证。
+
+### 新增
+
+**L4 HLS ABR 门面（第 10 个动作门面）**
+- `Ffmpeg.hlsAbr(File in, File outDir[, HlsAbrOptions])` 与 `FfmpegClient` 对称实例 + `hlsAbrAsync`（返回 `CompletableFuture<HlsAbrResult>`）。一入 N 档产 `outDir/master.m3u8` + 每档 `<目录>/index.m3u8` + 各档段（+ 启用 AES 时 `outDir/key/enc.key`）——单条 ffmpeg 命令（`-var_stream_map` + `-master_pl_name`），非 N 次单码率循环。**不重载 `hlsSegment`**（返回类型不同、语义相反：copy vs 恒转码，ABR 即便 N=1 也产 master）。
+- **恒转码走路线 A**：同一 `input.video()` 被 N 档 `scale`+`setsar` 消费，触发编译器原生 `split=N` 扇出（L2/L3 零改动）。
+- **恒跨档关键帧对齐**：一条 `-force_key_frames expr:gte(t,n_forced*hlsTime)` 覆盖全档（无缝切码率的正确性前提，恒开、不暴露开关）；`hlsTime` 默认 6.0。
+- **默认不注入 `-hls_base_url`**（与单码率相反）：每档 playlist 与段共位 → 段 URI=basename 天然自洽；`%v` 在 `-hls_base_url`/`name:` 内 8.0.1 实测均不展开。
+
+**码率梯建模**
+- `HlsVariant.of(int height, String videoBitrate)` + wither：`width`（默认 `scale=-2:h` 保比偶宽）/`maxrate`/`bufsize`（默认由 `videoBitrate` 派生 ≈1.07×/1.5×）/`audioBitrate`/`videoCodec`(libx264)/`audioCodec`(aac)/`crf`/`preset`/`name`（默认数字索引目录）。非法 `name`（含 `%v` 或 `var_stream_map` 元字符）即时报错。
+- `HlsLadder.defaults()`：**1080p@5M / 720p@3M / 480p@1.5M / 360p@800k**；`cropToSourceHeight` 按源高度剔除放大档（极小源兜底单档取偶、不放大）。默认梯 probe 源高度裁剪在门面完成，`buildHlsAbr` 保持纯函数；无视频轨/probe 失败可诊断 fail-fast。
+
+**结果与选项**
+- `HlsAbrResult`（record）：`master` + `List<HlsVariantResult>` + 可空 `HlsAudioRendition`（agroup）+ 可空 `keyFile` + `RunResult`。master 解析**引号感知/定向正则**（`BANDWIDTH`/`RESOLUTION` 避开 `CODECS` 值内逗号）。
+- `HlsAbrOptions`（不可变 wither）：`variants`（内部 null 哨兵=默认梯+裁剪）/`hlsTime`(6.0)/`key`/`audioBitrate`(128k, agroup)/`masterPlaylistName`/`segmentTemplate`/`startNumber`/`sharedAudio`(默认 true=agroup 共享单音轨)/`extraOutputArgs` + `onProgress`/`timeout`。
+
+**音频 agroup 共享单音轨（默认）**
+- 音频只编一次，`var_stream_map` 每视频档挂 `agroup`、末尾追加 `a:0,...,name:audio,default:yes`；省 N× 存储、各档边界一致；master 自动 `#EXT-X-MEDIA`，`HlsAbrResult` 单列 `audioRendition`。`sharedAudio(false)` 退回每档独立音频（带下标 `-c:a:N`/`-b:a:N`）。
+
+**AES-128（复用单码率基座，单密钥覆盖全档）**
+- `HlsAbrOptions.key(HlsKey)` 直接复用 `HlsKey`（B2/B1）；单个 `outDir/key/enc.key` + 临时 key_info_file 加密所有档、`0600` 原子创建、失败清理孤儿明文。**已知安全项**：省略 IV 时 ffmpeg 在 `var_stream_map` 下产 `IV=0x00…00` 跨段/跨 rendition 复用（异于单码率的段序号派生 IV）——采单密钥模型，VOD 场景风险低。**密钥托管**：`key/` MUST 排除在 CDN/静态托管根之外。
+
+> **边界**：fMP4 ABR / live·event / 密钥轮换 / per-variant 独立密钥 / SAMPLE-AES / 字幕 rendition / CDN 扁平段前缀均出界，走 `extraOutputArgs` 或后续变更。
+
+## [1.3.0] - 2026-07-15
+
+新增 **HLS 单码率 VOD 切片门面**（可选 AES-128）与**通用按秒强制关键帧**能力。纯 additive，既有 argv 逐字节不变，core 仍零重型依赖（AES 随机仅用 JDK `SecureRandom`）。HLS/AES 行为在 ffmpeg 8.0.1 实测验证；4.2 为支持下限但未单独验证。
+
+### 新增
+
+**L4 HLS 切片门面（第 9 个动作门面）**
+- `Ffmpeg.hlsSegment(File in, File outDir[, HlsOptions])` 与 `FfmpegClient` 对称实例 + `hlsSegmentAsync`（返回 `CompletableFuture<HlsResult>`）。产物三分离布局：`outDir/index.m3u8` + `outDir/ts/*.ts` + 启用 AES 时 `outDir/key/enc.key`。默认 `-c copy`；VOD 双标签（`-hls_playlist_type vod`/`-hls_list_size 0`）内部固定注入。
+- 段 URI 前缀经**默认注入 `-hls_base_url <segmentDir>/`** 保证（ffmpeg 单播放列表对段 URI 取 basename、不隐式相对化——8.0.1 实测）；`HlsOptions.segmentUriPrefix` 覆盖之。
+- `HlsResult`（record）：`segments` 由**解析写出的 m3u8** 得到（有序、免疫 `-y` 孤儿段），不 glob 目录。
+- `HlsOptions`（不可变 wither）：`hlsTime`（默认 8.0）/`playlistName`/`segmentDir`/`segmentTemplate`/`keyDir`/`keyFileName`/`startNumber`/`videoCodec`/`audioCodec`（默认 copy）/`key`/`alignKeyframes`/`segmentUriPrefix`/`cleanSegmentDir`/`extraOutputArgs` + `onProgress`/`timeout`。
+
+**AES-128（责任模型 B2 默认 / B1 便利）**
+- `HlsKey.of(byte[16], keyUri[, iv])`（B2：调用方持机密）、`HlsKey.random(keyUri)`（B1：JDK `SecureRandom`）。单个 `enc.key` + 临时 key_info_file 覆盖全档，二者以 `0600` 原子创建；临时文件 `finally` 删、失败/取消清理孤儿明文密钥。key URI **明文进 m3u8**（勿内嵌凭证）。`ErrorPatterns` 增补 `Invalid key size`/加密不可用的可读诊断。
+
+**通用按秒强制关键帧**
+- `TranscodeOptions.forceKeyframesEverySeconds(double)` → `-force_key_frames expr:gte(t,n_forced*T)`，与帧基 `gop(int)` **互补共存**；单一渲染器 `FacadeSupport.forceKeyFramesArgs`。`force_key_frames` 必然重编码，与 `-c:v copy` 冲突时 build 期 fail-fast。HLS 侧以 `HlsOptions.alignKeyframes(boolean)`（T=hlsTime）复用。
+
+> **边界**：多码率梯（ABR）/fMP4/live/密钥轮换均出界，走 `extraOutputArgs`；ABR 为已确认的独立后续变更（`add-hls-abr-ladder`）。
+
 ## [1.2.0] - 2026-07-15
 
 本次发布合并两批纯 additive 能力：面向下游 `ocs-media-task` 的 **P0 能力补齐** 与 type1 转码的 **滤镜链/码控能力（P1）**。默认行为逐字节不变，core 仍零重型依赖。

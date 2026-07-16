@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.File;
+import java.nio.file.Path;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -99,6 +100,121 @@ class FacadeCommandBuildTest {
         assertAdjacent(argv, "-keyint_min", "50");
         assertAdjacent(argv, "-g", "50");
         assertAdjacent(argv, "-sc_threshold", "0");
+    }
+
+    @Test
+    void 转码按秒强制关键帧渲染() {
+        CompiledCommand cmd = FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults().videoCodec("libx264").forceKeyframesEverySeconds(1));
+        assertAdjacent(cmd.argv(), "-force_key_frames", "expr:gte(t,n_forced*1)");
+    }
+
+    @Test
+    void 转码gop与按秒强制关键帧互补共存() {
+        CompiledCommand cmd = FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults().videoCodec("libx264").gop(50).forceKeyframesEverySeconds(2));
+        List<String> argv = cmd.argv();
+        assertAdjacent(argv, "-keyint_min", "50");
+        assertAdjacent(argv, "-g", "50");
+        assertAdjacent(argv, "-force_key_frames", "expr:gte(t,n_forced*2)");
+    }
+
+    @Test
+    void 按秒强制关键帧去尾零渲染() {
+        CompiledCommand cmd = FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults().videoCodec("libx264").forceKeyframesEverySeconds(1.5));
+        assertAdjacent(cmd.argv(), "-force_key_frames", "expr:gte(t,n_forced*1.5)");
+    }
+
+    @Test
+    void 按秒强制关键帧非正数即抛() {
+        assertThrows(IllegalArgumentException.class,
+                () -> TranscodeOptions.defaults().forceKeyframesEverySeconds(0));
+        assertThrows(IllegalArgumentException.class,
+                () -> TranscodeOptions.defaults().forceKeyframesEverySeconds(-1));
+    }
+
+    @Test
+    void 按秒强制关键帧与copy冲突build期抛错() {
+        assertThrows(FfmpegException.class, () -> FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults().videoCodec("copy").forceKeyframesEverySeconds(2)));
+    }
+
+    @Test
+    void 转码默认不含按秒强制关键帧() {
+        CompiledCommand cmd = FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.mp4"), TranscodeOptions.defaults());
+        assertFalse(cmd.argv().contains("-force_key_frames"), "默认不应含 -force_key_frames: " + cmd.argv());
+    }
+
+    // ===== HLS 单码率 VOD 切片 =====
+
+    @Test
+    void HLS默认copy路径最小argv() {
+        CompiledCommand cmd = FacadeSupport.buildHls(
+                new File("in.mp4"), new File("out"), HlsOptions.defaults(), null);
+        List<String> argv = cmd.argv();
+        assertAdjacent(argv, "-c:v", "copy");
+        assertAdjacent(argv, "-c:a", "copy");
+        assertAdjacent(argv, "-f", "hls");
+        assertAdjacent(argv, "-hls_time", "8");
+        assertAdjacent(argv, "-hls_playlist_type", "vod");
+        assertAdjacent(argv, "-hls_list_size", "0");
+        assertAdjacent(argv, "-hls_segment_type", "mpegts");
+        assertAdjacent(argv, "-hls_segment_filename", "out/ts/index%d.ts");
+        assertAdjacent(argv, "-hls_base_url", "ts/");
+        assertTrue(argv.contains("out/index.m3u8"), "输出为 playlist: " + argv);
+        // 首视频+首音频可选映射
+        assertTrue(argv.contains("0:v:0?"), "视频首轨可选映射: " + argv);
+        assertTrue(argv.contains("0:a:0?"), "音频首轨可选映射: " + argv);
+        assertFalse(argv.contains("-force_key_frames"), "默认不对齐: " + argv);
+        assertFalse(argv.contains("-hls_key_info_file"), "无 AES: " + argv);
+    }
+
+    @Test
+    void HLS的AES接线keyInfoFile() {
+        HlsOptions o = HlsOptions.defaults().key(HlsKey.of(new byte[16], "https://k/s.key"));
+        CompiledCommand cmd = FacadeSupport.buildHls(
+                new File("in.mp4"), new File("out"), o, Path.of("/tmp/ki.txt"));
+        assertAdjacent(cmd.argv(), "-hls_key_info_file", "/tmp/ki.txt");
+    }
+
+    @Test
+    void HLS转码对齐关键帧注入forceKeyFrames() {
+        HlsOptions o = HlsOptions.defaults().videoCodec("libx264").hlsTime(6.0).alignKeyframes(true);
+        CompiledCommand cmd = FacadeSupport.buildHls(new File("in.mp4"), new File("out"), o, null);
+        assertAdjacent(cmd.argv(), "-force_key_frames", "expr:gte(t,n_forced*6)");
+    }
+
+    @Test
+    void HLS对齐关键帧与copy冲突build期抛错() {
+        HlsOptions o = HlsOptions.defaults().alignKeyframes(true); // videoCodec 仍 copy
+        assertThrows(FfmpegException.class,
+                () -> FacadeSupport.buildHls(new File("in.mp4"), new File("out"), o, null));
+    }
+
+    @Test
+    void HLS的segmentUriPrefix覆盖默认baseUrl() {
+        HlsOptions o = HlsOptions.defaults().segmentUriPrefix("https://cdn/");
+        CompiledCommand cmd = FacadeSupport.buildHls(new File("in.mp4"), new File("out"), o, null);
+        List<String> argv = cmd.argv();
+        assertAdjacent(argv, "-hls_base_url", "https://cdn/");
+        // 只出现一次 base_url（覆盖非叠加）
+        assertEquals(1, argv.stream().filter("-hls_base_url"::equals).count(), "base_url 仅一次: " + argv);
+    }
+
+    @Test
+    void HLS段清单解析m3u8正文() {
+        String m3u8 = "#EXTM3U\n#EXT-X-VERSION:3\n#EXTINF:8.0,\nts/index0.ts\n#EXTINF:8.0,\nts/index1.ts\n#EXT-X-ENDLIST\n";
+        List<String> names = FacadeSupport.parseSegmentBasenames(m3u8);
+        assertEquals(List.of("index0.ts", "index1.ts"), names);
+        // CDN 绝对前缀亦取 basename
+        assertEquals(List.of("index0.ts"),
+                FacadeSupport.parseSegmentBasenames("#EXTINF:8,\nhttps://cdn/index0.ts\n"));
     }
 
     @Test
