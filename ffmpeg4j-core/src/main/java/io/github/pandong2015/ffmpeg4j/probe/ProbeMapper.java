@@ -30,7 +30,10 @@ final class ProbeMapper {
                 format.opt("size").asLong(-1L),
                 format.opt("nb_streams").asInt(0),
                 format.opt("nb_programs").asInt(0),
-                format.opt("start_time").asDouble(0.0));
+                format.opt("start_time").asDouble(0.0),
+                // 原始保真字段：byte-exact 保留、缺失→null
+                optString(format, "start_time"),
+                optString(format, "duration"));
     }
 
     private static List<StreamInfo> mapStreams(JsonValue streams) {
@@ -70,7 +73,11 @@ final class ProbeMapper {
                     optString(s, "sample_aspect_ratio"),
                     optString(s, "display_aspect_ratio"),
                     s.opt("disposition").opt("attached_pic").asInt(0) == 1,
-                    s.opt("tags").opt("language").asString(null)));
+                    s.opt("tags").opt("language").asString(null),
+                    // 原始保真字段：byte-exact 保留、缺失→null（异于上面 asDouble(0.0) 的哨兵）
+                    optString(s, "codec_tag"),
+                    optString(s, "start_time"),
+                    optString(s, "duration")));
         }
         return result;
     }

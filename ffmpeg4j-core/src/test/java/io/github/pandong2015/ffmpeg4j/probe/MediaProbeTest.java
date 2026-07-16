@@ -303,6 +303,71 @@ class MediaProbeTest {
         assertFalse(ex.command().isEmpty(), "应记录执行的命令");
     }
 
+    // --- 原始保真字段（codec_tag hex + start_time/duration 定点串，缺失→null）------------------
+
+    @Test
+    void codecTag十六进制与可读串并存() {
+        String json = """
+                {"streams":[{"index":0,"codec_type":"video","codec_name":"h264",
+                  "codec_tag_string":"avc1","codec_tag":"0x31637661"}]}""";
+        StreamInfo s = MediaProbe.fromJson(json).streams().get(0);
+        assertEquals("avc1", s.codecTag(), "codecTag 仍为可读 codec_tag_string");
+        assertEquals("0x31637661", s.codecTagHex(), "codecTagHex 为原始 codec_tag 十六进制");
+    }
+
+    @Test
+    void startTime与duration原始定点串byteExact保留() {
+        String json = """
+                {"streams":[{"index":0,"codec_type":"video","codec_name":"h264",
+                  "start_time":"0.000000","duration":"12.500000"}]}""";
+        StreamInfo s = MediaProbe.fromJson(json).streams().get(0);
+        assertEquals("0.000000", s.rawStartTime(), "逐字符保留定点串，不经 double 往返");
+        assertEquals("12.500000", s.rawDuration());
+        assertEquals(0.0, s.startTimeSeconds(), 1e-9, "既有 double 字段不变");
+        assertEquals(12.5, s.durationSeconds(), 1e-9);
+    }
+
+    @Test
+    void 缺失codecTag与定点串为null而秒值仍哨兵() {
+        String json = """
+                {"streams":[{"index":0,"codec_type":"video","codec_name":"h264"}]}""";
+        StreamInfo s = MediaProbe.fromJson(json).streams().get(0);
+        assertNull(s.codecTagHex(), "缺 codec_tag → null，据此区分缺失");
+        assertNull(s.codecTag(), "缺 codec_tag_string → null（既有字段亦不误填空串）");
+        assertNull(s.rawStartTime());
+        assertNull(s.rawDuration());
+        assertEquals(0.0, s.startTimeSeconds(), 1e-9, "start_time 缺失塌缩为 0.0 哨兵（既有语义不变）");
+        assertEquals(0.0, s.durationSeconds(), 1e-9, "duration 缺失塌缩为 0.0 哨兵（与 startTime 侧对称）");
+    }
+
+    @Test
+    void format级原始定点串保真与缺失为null() {
+        FormatInfo f = MediaProbe.fromJson(
+                "{\"format\":{\"format_name\":\"mp4\",\"duration\":\"60.024000\",\"start_time\":\"0.000000\"},\"streams\":[]}")
+                .format();
+        assertEquals("60.024000", f.rawDuration());
+        assertEquals("0.000000", f.rawStartTime());
+        assertEquals(60.024, f.durationSeconds(), 1e-9);
+
+        FormatInfo f2 = MediaProbe.fromJson(
+                "{\"format\":{\"format_name\":\"mp4\",\"duration\":\"60.0\"},\"streams\":[]}").format();
+        assertNull(f2.rawStartTime(), "缺 start_time → null");
+        assertEquals(0.0, f2.startTimeSeconds(), 1e-9);
+    }
+
+    @Test
+    void 集成_探测真实文件含codecTagHex与rawDuration(@TempDir Path tmp) throws Exception {
+        assumeTrue(commandExists("ffmpeg") && commandExists("ffprobe"), "无 ffmpeg/ffprobe，跳过");
+        Path video = tmp.resolve("t.mp4");
+        generateTestVideo(video);
+        ProbeResult r = MediaProbe.probe(video.toFile());
+        StreamInfo v = r.streams(MediaType.VIDEO).get(0);
+        assertNotNull(v.codecTagHex(), "mp4 视频流应有 codec_tag 十六进制");
+        assertNotNull(v.rawDuration(), "真实文件应有 duration 原始串");
+        assertEquals(v.durationSeconds(), Double.parseDouble(v.rawDuration()), 1e-6,
+                "rawDuration 数值应与 durationSeconds 一致");
+    }
+
     // --- helpers ---------------------------------------------------------
 
     private static void generateTestVideo(Path out) throws IOException, InterruptedException {

@@ -2,6 +2,28 @@
 
 本文件记录 ffmpeg4j 各版本的显著变更。遵循「新增 / 变更 / 修复」分类，日期采用 ISO 8601。
 
+## [1.5.0] - 2026-07-16
+
+清偿下游 `ocs-media-task` 能力台账点名的 **5 处库侧残留 gap**（probe 原始保真 + transcode 流禁用/守卫/进阶 typed 码控）。纯 additive，既有默认 argv **逐字节不变**、既有 probe 字段语义不变；core 仍零重型依赖。
+
+### 新增
+
+**probe 原始保真字段（media-probe）**
+- `StreamInfo` 增 `codecTagHex`（原始 `codec_tag` 十六进制，如 `"0x31637661"`，与既有 `codecTag`=`codec_tag_string` 并列）、`rawStartTime`/`rawDuration`（`start_time`/`duration` 的**原始定点串**，byte-exact 保留精度与尾零、缺失→`null`，据此可区分「真实 0」与「缺失」）。
+- `FormatInfo` 增 `rawStartTime`/`rawDuration`（同上，容器级）。
+- 既有 typed 便利字段（`codecTag`/`startTimeSeconds`/`durationSeconds` 等）语义与哨兵**一律不变**；record 扩字段沿用「append + 兼容构造器」范式（`StreamInfo` 26→29 参、`FormatInfo` 8→10 参，旧 arity 构造器保留），既有直接构造点源码兼容。
+
+**transcode 流禁用与进阶 typed 码控（job-model）**
+- `TranscodeOptions.disableVideo(boolean)`/`disableAudio(boolean)`：产 `-vn`/`-an`、跳过对应 codec 与码控、只映射保留的一路；纯音频抽取仍**首选 `extractAudio` 门面**，`disableVideo` 用于从含视频源转码剥离视频的次选场景。
+- `TranscodeOptions.audioSampleRate(int)`（→`-ar`，紧接 `-b:a`）、`strict(String)` + 便利 `strictExperimental()`（→`-strict -2`，于全部码控段后 `extraOutputArgs` 前）、`x265Params(String)`（→`-x265-params`，紧接视频码控段尾）——让 h265 VBV / 实验编码器 / 重采样摆脱 `extraOutputArgs` 整体替换 List 的脚枪。`x265Params` 是**显式** x265 通道，库不侦测 codec、不自动翻译 `maxrate`/`bufsize`。
+- `TranscodeOptions.vbv(String maxrate)`：设 `maxrate` 并在 build 期依**最终** `maxrate` 派生 `bufsize=maxrate×2`（数值翻倍保留 K/M 单位，`vbv("2M").maxrate("3M")`→`bufsize=6M`）；`vbv(String, String)` 显式二参。
+
+### 修复 / 变更
+
+- **transcode codec `null` 守卫**：未禁用而 `videoCodec`/`audioCodec` 为 `null` 时 build 期抛可诊断 `FfmpegException`，消除既有 `args.add(null)` 污染 argv 的缺陷（`defaults()` codec 恒非 null，无既有回归）。
+- **冲突 fail-fast**：`disableVideo`+`disableAudio` 同真（空输出）、`disableVideo`+`videoFilter`（无视频可供滤镜链）build 期抛错。
+- **孤立 `bufsize`（无 `maxrate`）行为不变**：仍逐字产出 `-bufsize`（保 byte-compat、不误伤合法 `-b:v`+`-bufsize`），仅 `Javadoc` 告警引导改用 `vbv()`——不 hard-fail。
+
 ## [1.4.0] - 2026-07-16
 
 新增 **HLS ABR 多码率梯 VOD 门面**（可选 AES-128）。纯 additive，既有 argv 逐字节不变，`hlsSegment` 契约不动；core 仍零重型依赖。ABR 全链路在 ffmpeg 8.0.1 实测验证；4.2 为支持下限但未单独验证。

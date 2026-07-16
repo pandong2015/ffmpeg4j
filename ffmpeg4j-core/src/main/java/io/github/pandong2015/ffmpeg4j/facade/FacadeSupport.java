@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import io.github.pandong2015.ffmpeg4j.FfmpegException;
@@ -88,41 +89,85 @@ final class FacadeSupport {
 
     static CompiledCommand buildTranscode(File in, File out, TranscodeOptions o) {
         Input input = Input.of(in);
+        // 冲突 fail-fast（引用不存在的流 / 空输出）——优先于任何 argv 组装。
+        if (o.disableVideo() && o.disableAudio()) {
+            throw new FfmpegException("disableVideo 与 disableAudio 同时为真会产出空输出：至少保留一路", null);
+        }
+        if (o.disableVideo() && o.videoFilter() != null) {
+            throw new FfmpegException("disableVideo 与 videoFilter 冲突：视频已禁用、无流可供滤镜链消费", null);
+        }
         List<String> args = new ArrayList<>();
-        args.add("-c:v");
-        args.add(o.videoCodec());
-        if (o.crf() != null) {
-            args.add("-crf");
-            args.add(o.crf().toString());
+
+        // ===== 视频段：disableVideo → -vn（跳过全部视频码控）；否则 -c:v + 码控 =====
+        if (o.disableVideo()) {
+            args.add("-vn");
+        } else {
+            if (o.videoCodec() == null) {
+                throw new FfmpegException(
+                        "videoCodec 为 null：请设编码器，或调 disableVideo() 产 -vn（本门面不支持省略 -c:v 由 ffmpeg 依容器自选）", null);
+            }
+            args.add("-c:v");
+            args.add(o.videoCodec());
+            if (o.crf() != null) {
+                args.add("-crf");
+                args.add(o.crf().toString());
+            }
+            if (o.preset() != null) {
+                args.add("-preset");
+                args.add(o.preset());
+            }
+            if (o.videoBitrate() != null) {
+                args.add("-b:v");
+                args.add(o.videoBitrate());
+            }
+            if (o.fps() != null) {
+                args.add("-r");
+                args.add(num(o.fps()));
+            }
+            // h264 惯用 VBV：-maxrate/-bufsize；libx265 的 VBV 走 x265Params/extraOutputArgs（不自动翻译）。
+            if (o.maxrate() != null) {
+                args.add("-maxrate");
+                args.add(o.maxrate());
+            }
+            // bufsize：显式优先；vbv 标记「待派生」且未显式设 bufsize 时依<em>最终</em> maxrate 派生 ×2（build 期求值，
+            // 故 vbv("2M").maxrate("3M") 得 6M）。裸 bufsize（无 maxrate）保持既有行为逐字产出、不 hard-fail（byte-compat）。
+            String bufsize = o.bufsize();
+            if (bufsize == null && o.vbvDeriveBufsize() && o.maxrate() != null) {
+                bufsize = doubleRate(o.maxrate());
+            }
+            if (bufsize != null) {
+                args.add("-bufsize");
+                args.add(bufsize);
+            }
+            // x265Params 紧接视频码控段尾（-bufsize 之后、-c:a 之前）；仅对 libx265 有意义，库不校验 codec。
+            if (o.x265Params() != null) {
+                args.add("-x265-params");
+                args.add(o.x265Params());
+            }
         }
-        if (o.preset() != null) {
-            args.add("-preset");
-            args.add(o.preset());
+
+        // ===== 音频段：disableAudio → -an（跳过 -c:a/-b:a/-ar）；否则 -c:a + 码控 =====
+        if (o.disableAudio()) {
+            args.add("-an");
+        } else {
+            if (o.audioCodec() == null) {
+                throw new FfmpegException("audioCodec 为 null：请设编码器，或调 disableAudio() 产 -an", null);
+            }
+            args.add("-c:a");
+            args.add(o.audioCodec());
+            if (o.audioBitrate() != null) {
+                args.add("-b:a");
+                args.add(o.audioBitrate());
+            }
+            if (o.audioSampleRate() != null) {
+                // -ar 紧接 -b:a（音频段尾）。
+                args.add("-ar");
+                args.add(o.audioSampleRate().toString());
+            }
         }
-        if (o.videoBitrate() != null) {
-            args.add("-b:v");
-            args.add(o.videoBitrate());
-        }
-        if (o.fps() != null) {
-            args.add("-r");
-            args.add(num(o.fps()));
-        }
-        // h264 惯用 VBV：-maxrate/-bufsize；libx265 的 VBV 走 extraOutputArgs（不自动翻译）。
-        if (o.maxrate() != null) {
-            args.add("-maxrate");
-            args.add(o.maxrate());
-        }
-        if (o.bufsize() != null) {
-            args.add("-bufsize");
-            args.add(o.bufsize());
-        }
-        args.add("-c:a");
-        args.add(o.audioCodec());
-        if (o.audioBitrate() != null) {
-            args.add("-b:a");
-            args.add(o.audioBitrate());
-        }
-        if (o.gop() != null) {
+
+        // ===== GOP / 强制关键帧（视频相关，disableVideo 时整体跳过）=====
+        if (!o.disableVideo() && o.gop() != null) {
             // GOP 段：关键帧间隔帧数派生 -keyint_min/-g/-sc_threshold 0（下游按 fps*秒 传入帧数）。
             String g = o.gop().toString();
             args.add("-keyint_min");
@@ -132,7 +177,7 @@ final class FacadeSupport {
             args.add("-sc_threshold");
             args.add("0");
         }
-        if (o.forceKeyframesEverySeconds() != null) {
+        if (!o.disableVideo() && o.forceKeyframesEverySeconds() != null) {
             // 按秒强制关键帧必然重编码，与 -c:v copy 冲突：build 期 fail-fast（不隐式改 codec）。
             if ("copy".equals(o.videoCodec())) {
                 throw new FfmpegException(
@@ -140,21 +185,55 @@ final class FacadeSupport {
             }
             args.addAll(forceKeyFramesArgs(o.forceKeyframesEverySeconds()));
         }
+
+        // ===== strict：全部类型化码控之后、extraOutputArgs 之前（编码器通用旗标，与禁用标志无关）=====
+        if (o.strict() != null) {
+            args.add("-strict");
+            args.add(o.strict());
+        }
+
         // 逃生舱：置于类型化码控之后（同键 ffmpeg 取后者）；内容不参与类型校验。
         args.addAll(o.extraOutputArgs());
 
+        // ===== 输出映射：按禁用/滤镜决定映射哪些流 =====
+        String[] argv = args.toArray(new String[0]);
+        // disableVideo+videoFilter 已在开头 fail-fast，故此处 filter 仅在未禁用视频时求值。
+        VideoStream filtered = (o.videoFilter() != null) ? o.videoFilter().apply(input.video()) : null;
         Output output;
-        if (o.videoFilter() != null) {
+        if (o.disableVideo()) {
+            // 纯音频：只映射音频。
+            output = Output.to(out, input.audioOptional()).withArgs(argv);
+        } else if (o.disableAudio()) {
+            // 纯视频：只映射视频（滤镜链输出或可选映射）。
+            output = (filtered != null)
+                    ? Output.to(out, filtered).withArgs(argv)
+                    : Output.to(out, input.videoOptional()).withArgs(argv);
+        } else if (filtered != null) {
             // 挂滤镜链：视频以必选映射 input.video() 为起点、经 filter_complex；音频仍可选映射（缺音轨静默跳过）。
-            // 滤镜产出 FilterOrigin 后 optional 语义不复存在，故视频起点须必选（对纯音频输入即使用者错误，交由 ffmpeg 报错）。
-            VideoStream v = o.videoFilter().apply(input.video());
-            output = Output.to(out, v, input.audioOptional()).withArgs(args.toArray(new String[0]));
+            output = Output.to(out, filtered, input.audioOptional()).withArgs(argv);
         } else {
-            // 无滤镜：视频/音频双可选映射（0:v:0?/0:a:0?），纯音频/静音视频静默跳过，argv 逐字节与既有一致。
-            output = Output.to(out, input.videoOptional(), input.audioOptional())
-                    .withArgs(args.toArray(new String[0]));
+            // 无滤镜、不禁用：视频/音频双可选映射（0:v:0?/0:a:0?），argv 逐字节与既有一致。
+            output = Output.to(out, input.videoOptional(), input.audioOptional()).withArgs(argv);
         }
         return new GraphCompiler().compile(output);
+    }
+
+    // rate 串（如 "2M"/"2000k"/"3000000"/"2.5M"）的数值前缀 + 单位后缀。
+    private static final Pattern RATE_PATTERN = Pattern.compile("^([0-9]*\\.?[0-9]+)\\s*([a-zA-Z]*)$");
+
+    /**
+     * 把码率串的<em>数值前缀翻倍</em>、原样保留单位后缀（{@code "2M"→"4M"}、{@code "2000k"→"4000k"}、
+     * {@code "3000000"→"6000000"}、{@code "2.5M"→"5M"}）；数值经 {@link #num} locale 无关去尾零渲染。供
+     * {@link TranscodeOptions#vbv(String)} 在 build 期派生 {@code bufsize=maxrate×2}。不可解析（空串/纯字母/
+     * 含非法字符）抛 {@link IllegalArgumentException}（fail-fast、不产垃圾 argv）。单位语义与翻倍无关，翻数值前缀恒正确。
+     */
+    static String doubleRate(String rate) {
+        Objects.requireNonNull(rate, "rate 不能为 null");
+        Matcher m = RATE_PATTERN.matcher(rate.trim());
+        if (!m.matches()) {
+            throw new IllegalArgumentException("无法解析码率串（须为「数值[单位]」，如 2M/2000k/3000000）：" + rate);
+        }
+        return num(Double.parseDouble(m.group(1)) * 2) + m.group(2);
     }
 
     // ===== HLS 单码率 VOD 切片（纯函数产 argv；写盘/解析在 FfmpegClient）=====

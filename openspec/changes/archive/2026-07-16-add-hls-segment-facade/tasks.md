@@ -48,10 +48,10 @@
 - [x] 6.6 `mvn -o test` 全 reactor 全绿（无 ffmpeg 环境经 `assumeTrue` 跳过集成仍全绿）
 - [x] 6.7 `openspec validate add-hls-segment-facade --strict` 通过
 - [x] 6.8 **版本验证口径**（决定：不设 4.2 CI lane）：USAGE/README/Javadoc 声明「HLS/AES 仅于 ffmpeg 8.0.1 实测；4.2 为支持下限但未单独验证，遇差异请反馈」；移除各处「跨 4.2 稳定」强断言
-- [ ] 6.9 **SLICE argv 差集核对**（合入前，若可及 `ocs-media-task` 源）：粘出 worker SLICE 真实 HLS+AES argv 逐条比对本设计 typed 覆盖/残留；确认是否多码率（决定 goal 措辞是否降级）
+- [x] 6.9 **SLICE argv 差集核对**（已完成，取证于 `ocs-media-task/docs/media-task/ffmpeg4j-capability-requirements.md` §二 HLS 台账）：worker SLICE 逐条比对确认为**单码率** `-c copy` VOD HLS + 可选 AES-128，`hlsSegment` typed 全覆盖（分段 MD5 混淆重命名/两阶段提交为下游业务，非本门面职责）；goal 措辞无需降级
 
 ## 7. 备选（按需，不阻断）
 
-- [ ] 7.1 `HlsOptions.createSegmentDir(false)` 关掉自动建目录（默认建；scope creep，按需）
+- [x] 7.1 `HlsOptions.createSegmentDir(false)`（备选，**决定不实现**）：自动建 `ts/`/`key/` 子目录是本门面的布局约定（已在 §5.3 落地），关闭开关属 scope creep 且无下游需求，登记归档不再跟进
 
 > 注：openssl 能力诊断已上提为 **2.6**（AES 是本变更卖点）、`cleanSegmentDir` 已并入 **3.5**，不再列备选。

@@ -650,6 +650,153 @@ class FacadeCommandBuildTest {
         assertTrue(cmd.argv().indexOf("-ss") > cmd.argv().indexOf("-i"), "-ss 应在输出侧: " + cmd.argv());
     }
 
+    // ===== 1b. transcode 流禁用 / 进阶码控 / VBV 派生（gap 3/4/5）=====
+
+    @Test
+    void 转码禁用视频产vn且只映射音频() {
+        CompiledCommand cmd = FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.m4a"),
+                TranscodeOptions.defaults().disableVideo(true).audioCodec("aac"));
+        List<String> argv = cmd.argv();
+        assertTrue(argv.contains("-vn"), "应含 -vn: " + argv);
+        assertFalse(argv.contains("-c:v"), "不应含 -c:v: " + argv);
+        assertAdjacent(argv, "-c:a", "aac");
+        assertTrue(argv.contains("0:a:0?"), "应映射音频: " + argv);
+        assertFalse(argv.contains("0:v:0?"), "不应映射视频: " + argv);
+    }
+
+    @Test
+    void 转码禁用视频时静默跳过全部视频码控与x265Params() {
+        CompiledCommand cmd = FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.m4a"),
+                TranscodeOptions.defaults().disableVideo(true).audioCodec("aac")
+                        .videoCodec("libx265").crf(20).preset("slow").videoBitrate("3M")
+                        .fps(30).maxrate("2M").bufsize("4M").gop(50).x265Params("log-level=none"));
+        List<String> argv = cmd.argv();
+        assertTrue(argv.contains("-vn"), "应含 -vn: " + argv);
+        for (String skipped : List.of("-c:v", "-crf", "-preset", "-b:v", "-r",
+                "-maxrate", "-bufsize", "-g", "-keyint_min", "-sc_threshold", "-x265-params")) {
+            assertFalse(argv.contains(skipped), "disableVideo 应静默跳过 " + skipped + ": " + argv);
+        }
+        assertAdjacent(argv, "-c:a", "aac");
+    }
+
+    @Test
+    void 转码禁用音频产an且只映射视频() {
+        CompiledCommand cmd = FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults().disableAudio(true).videoCodec("libx264").audioSampleRate(44100));
+        List<String> argv = cmd.argv();
+        assertTrue(argv.contains("-an"), "应含 -an: " + argv);
+        assertFalse(argv.contains("-c:a"), "不应含 -c:a: " + argv);
+        assertFalse(argv.contains("-ar"), "disableAudio 时不应含 -ar: " + argv);
+        assertAdjacent(argv, "-c:v", "libx264");
+        assertTrue(argv.contains("0:v:0?"), "应映射视频: " + argv);
+        assertFalse(argv.contains("0:a:0?"), "不应映射音频: " + argv);
+    }
+
+    @Test
+    void 转码codec为null未禁用时build期抛错不污染argv() {
+        assertThrows(FfmpegException.class, () -> FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.mp4"), TranscodeOptions.defaults().videoCodec(null)));
+        assertThrows(FfmpegException.class, () -> FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.mp4"), TranscodeOptions.defaults().audioCodec(null)));
+    }
+
+    @Test
+    void 转码同禁音视频或禁视频叠滤镜链build期抛错() {
+        assertThrows(FfmpegException.class, () -> FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults().disableVideo(true).disableAudio(true)));
+        assertThrows(FfmpegException.class, () -> FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults().disableVideo(true).videoFilter(v -> v)));
+    }
+
+    @Test
+    void 转码音频采样率紧接ba() {
+        List<String> argv = FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults().audioCodec("aac").audioBitrate("128k").audioSampleRate(44100)).argv();
+        assertAdjacent(argv, "-b:a", "128k");
+        assertAdjacent(argv, "-ar", "44100");
+        assertEquals(argv.indexOf("-b:a") + 2, argv.indexOf("-ar"), "-ar 应紧接 -b:a: " + argv);
+    }
+
+    @Test
+    void 转码strict于码控段尾extraOutputArgs前且strictExperimental等价() {
+        CompiledCommand cmd = FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults().gop(50).strictExperimental().extraOutputArgs("-movflags", "+faststart"));
+        List<String> argv = cmd.argv();
+        assertAdjacent(argv, "-strict", "-2");
+        assertTrue(argv.indexOf("-strict") > argv.indexOf("-sc_threshold"), "-strict 应在 GOP 段后: " + argv);
+        assertTrue(argv.indexOf("-strict") < argv.indexOf("-movflags"), "-strict 应在 extraOutputArgs 前: " + argv);
+        List<String> argv2 = FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults().gop(50).strict("-2").extraOutputArgs("-movflags", "+faststart")).argv();
+        assertEquals(argv, argv2, "strict(-2) 应与 strictExperimental() 逐字节相同");
+    }
+
+    @Test
+    void 转码x265Params紧接视频码控段尾在ca之前() {
+        List<String> argv = FacadeSupport.buildTranscode(
+                new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults().videoCodec("libx265").maxrate("2M").bufsize("4M")
+                        .x265Params("vbv-maxrate=2000:vbv-bufsize=4000")).argv();
+        assertAdjacent(argv, "-x265-params", "vbv-maxrate=2000:vbv-bufsize=4000");
+        assertTrue(argv.indexOf("-x265-params") > argv.indexOf("-bufsize"), "-x265-params 应在 -bufsize 后: " + argv);
+        assertTrue(argv.indexOf("-x265-params") < argv.indexOf("-c:a"), "-x265-params 应在 -c:a 前: " + argv);
+    }
+
+    @Test
+    void 转码vbv派生bufsize为maxrate两倍且跟随最终maxrate() {
+        assertAdjacent(FacadeSupport.buildTranscode(new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults().vbv("2M")).argv(), "-bufsize", "4M");
+        // 显式二参不派生
+        assertAdjacent(FacadeSupport.buildTranscode(new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults().vbv("2M", "6M")).argv(), "-bufsize", "6M");
+        // build 期派生跟随最终 maxrate
+        List<String> argv = FacadeSupport.buildTranscode(new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults().vbv("2M").maxrate("3M")).argv();
+        assertAdjacent(argv, "-maxrate", "3M");
+        assertAdjacent(argv, "-bufsize", "6M");
+        // 显式 bufsize 清除派生意图、build 期不被覆盖（防「派生条件逻辑取反」类 bug）
+        assertAdjacent(FacadeSupport.buildTranscode(new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults().vbv("2M").bufsize("5M")).argv(), "-bufsize", "5M");
+    }
+
+    @Test
+    void 转码孤立bufsize保持既有行为不抛错也不产maxrate() {
+        List<String> argv = FacadeSupport.buildTranscode(new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults().bufsize("4M")).argv();
+        assertAdjacent(argv, "-bufsize", "4M");
+        assertFalse(argv.contains("-maxrate"), "孤立 bufsize 不应产 -maxrate: " + argv);
+    }
+
+    @Test
+    void 转码裸maxrate不自动派生bufsize且默认不产新增旗标() {
+        List<String> bare = FacadeSupport.buildTranscode(new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults().maxrate("2M")).argv();
+        assertTrue(bare.contains("-maxrate"), "应含 -maxrate: " + bare);
+        assertFalse(bare.contains("-bufsize"), "裸 maxrate 不应派生 bufsize: " + bare);
+        List<String> def = FacadeSupport.buildTranscode(new File("in.mp4"), new File("out.mp4"),
+                TranscodeOptions.defaults()).argv();
+        assertFalse(def.contains("-vn") || def.contains("-an") || def.contains("-ar")
+                || def.contains("-strict") || def.contains("-x265-params"), "默认不产新增旗标: " + def);
+    }
+
+    @Test
+    void doubleRate翻倍保留单位() {
+        assertEquals("4M", FacadeSupport.doubleRate("2M"));
+        assertEquals("4000k", FacadeSupport.doubleRate("2000k"));
+        assertEquals("6000000", FacadeSupport.doubleRate("3000000"));
+        assertEquals("5M", FacadeSupport.doubleRate("2.5M"));
+        assertThrows(IllegalArgumentException.class, () -> FacadeSupport.doubleRate(""));
+        assertThrows(IllegalArgumentException.class, () -> FacadeSupport.doubleRate("abc"));
+        assertThrows(IllegalArgumentException.class, () -> FacadeSupport.doubleRate("2M!"));
+    }
+
     // ===== helpers =====
 
     private static void assertAdjacent(List<String> argv, String a, String b) {
