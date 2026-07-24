@@ -8,7 +8,7 @@
          子模块：ffmpeg4j-core（纯 Java，坐标不变）+ Spring Boot autoconfigure/starter 两模块。 -->
     <groupId>io.github.pandong2015</groupId>
     <artifactId>ffmpeg4j-parent</artifactId>
-    <version>1.5.0</version>
+    <version>1.6.0</version>
     <packaging>pom</packaging>
 
     <name>ffmpeg4j-parent</name>

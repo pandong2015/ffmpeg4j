@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.github.pandong2015</groupId>
         <artifactId>ffmpeg4j-parent</artifactId>
-        <version>1.5.0</version>
+        <version>1.6.0</version>
     </parent>
 
     <!-- 便利聚合 starter（遵 Spring 官方约定）：不含 Java 源码，仅聚合 autoconfigure（传递引入 core）
@@ -38,4 +38,40 @@
             <optional>true</optional>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Starter 仅聚合依赖、没有源码。Central 仍要求每个主 JAR 配套
+                 sources/javadoc JAR，因此显式生成可签名的空占位附件。 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>attach-placeholder-sources</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                        <configuration>
+                            <classifier>sources</classifier>
+                            <skipIfEmpty>false</skipIfEmpty>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>attach-placeholder-javadocs</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                        <configuration>
+                            <classifier>javadoc</classifier>
+                            <skipIfEmpty>false</skipIfEmpty>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

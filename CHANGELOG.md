@@ -2,6 +2,24 @@
 
 本文件记录 ffmpeg4j 各版本的显著变更。遵循「新增 / 变更 / 修复」分类，日期采用 ISO 8601。
 
+## [1.6.0] - 2026-07-24
+
+本次发布新增生产级任务生命周期与可观测能力，并保持原有同步门面和 `xxxAsync` API 兼容。
+
+### 新增
+
+- 新增 `TaskHandle`、`TaskReport`、`TaskEvent`、`TaskId`、`TaskStatus` 等任务模型，支持稳定任务标识、状态查询、取消传播和结构化终态报告。
+- 新增结构化 `FfmpegWarning` 与 `WarningCode`，进度通道不可用等非致命异常可作为有序警告随任务报告返回。
+- `FfmpegClient` 新增任务式门面；原有同步与异步调用方式保持不变。
+- Spring Boot Starter 新增 `FfmpegTaskEvent`、`FfmpegTaskListener`，并强化任务、进度事件与 `taskId` 的关联。
+- Micrometer 新增任务终态、警告与运行中任务指标。
+- Spring 异步执行器支持有界线程池、队列容量、拒绝策略、线程命名和优雅停机配置。
+
+### 变更
+
+- 进度通道内部故障不再误判为媒体处理失败；任务可继续执行，并通过结构化警告暴露进度不可用状态。
+- 升级 JaCoCo Maven 插件至 `0.8.15`。
+
 ## [1.5.0] - 2026-07-16
 
 清偿下游 `ocs-media-task` 能力台账点名的 **5 处库侧残留 gap**（probe 原始保真 + transcode 流禁用/守卫/进阶 typed 码控）。纯 additive，既有默认 argv **逐字节不变**、既有 probe 字段语义不变；core 仍零重型依赖。
@@ -183,6 +201,8 @@ type1 转码所需的**滤镜链与码控能力**（纯 additive、无 videoFilt
 
 - **1.0.0** 已 GPG 签名并部署至 **Maven Central**（2026-07-14）；`pom.xml` 的 `<scm>`/`<url>` 已为真实仓库地址。
 
+[1.6.0]: https://github.com/pandong2015/ffmpeg4j/releases/tag/v1.6.0
+[1.5.0]: https://github.com/pandong2015/ffmpeg4j/releases/tag/v1.5.0
 [1.4.0]: https://github.com/pandong2015/ffmpeg4j/releases/tag/v1.4.0
 [1.3.0]: https://github.com/pandong2015/ffmpeg4j/releases/tag/v1.3.0
 [1.2.0]: https://github.com/pandong2015/ffmpeg4j/releases/tag/v1.2.0
