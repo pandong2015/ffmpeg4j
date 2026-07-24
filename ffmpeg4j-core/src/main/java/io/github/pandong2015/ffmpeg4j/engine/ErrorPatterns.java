@@ -2,6 +2,7 @@ package io.github.pandong2015.ffmpeg4j.engine;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * 已知 ffmpeg 错误模式库，按「最具体优先」求值：具体模式在前，通用 errno（file-not-found /
@@ -9,8 +10,8 @@ import java.util.Optional;
  * failed!}）作最终兜底。匹配整段 stderr 尾部，兼容新老 errno 措辞（{@code file: <errno>} 与
  * 5.x 的 {@code Error opening input: <errno>}）。
  *
- * <p>库内部管道故障（如 {@code -progress} tcp 通道 {@code Connection refused}）标记为
- * {@code internal}，供调用方判定「不外泄为媒体错误」。
+ * <p>库内部管道故障必须结合本次实际注入的 {@code -progress} 端点判定，不能仅凭回环地址推断，
+ * 否则用户自己的 localhost 媒体输入会被误判。
  */
 final class ErrorPatterns {
 
@@ -18,14 +19,6 @@ final class ErrorPatterns {
      * 有序模式表——顺序即优先级，务必「最具体在前、通用 errno 在后、generic-failure 最末」。
      */
     private static final List<ErrorPattern> PATTERNS = List.of(
-            // —— 库内部管道故障（不外泄为媒体错误）：进度 tcp 端口连接被拒 —— //
-            // 仅锚定引擎自身的回环进度端点（bind-before-spawn 保证进度口恒在 127.0.0.1 监听），
-            // 去掉裸 "Connection refused" 兜底，避免把用户远端网络输入失败误判为库内部管道故障。
-            ErrorPattern.internal(
-                    "progress-plumbing",
-                    "tcp://(127\\.0\\.0\\.1|localhost|\\[::1\\])(:\\d+)?[^\\n]*Connection refused",
-                    "库内部进度管道连接失败（-progress tcp 回环通道 Connection refused），属库自身管道问题、非媒体错误"),
-
             // —— 滤镜相关（本库为 filter_complex 编译器，高价值、置前）—— //
             ErrorPattern.of(
                     "unknown-filter",
@@ -121,8 +114,17 @@ final class ErrorPatterns {
 
     /** 返回按优先级命中的第一条模式；无命中返回空。 */
     static Optional<ErrorPattern> classify(String stderrTail) {
+        return classify(stderrTail, null);
+    }
+
+    /** 结合本次实际注入的 progress 参数分类；只有精确端点连接失败才属于内部故障。 */
+    static Optional<ErrorPattern> classify(String stderrTail, String progressArg) {
         if (stderrTail == null || stderrTail.isBlank()) {
             return Optional.empty();
+        }
+        ErrorPattern progressFailure = progressFailure(progressArg);
+        if (progressFailure != null && progressFailure.matches(stderrTail)) {
+            return Optional.of(progressFailure);
         }
         for (ErrorPattern p : PATTERNS) {
             if (p.matches(stderrTail)) {
@@ -137,8 +139,28 @@ final class ErrorPatterns {
         return classify(stderrTail).map(ErrorPattern::reason);
     }
 
+    /** 结合本次实际注入的 progress 参数返回命中原因。 */
+    static Optional<String> reasonFor(String stderrTail, String progressArg) {
+        return classify(stderrTail, progressArg).map(ErrorPattern::reason);
+    }
+
     /** 命中模式是否属于库内部管道故障（不应外泄为媒体错误）。 */
     static boolean isInternal(String stderrTail) {
-        return classify(stderrTail).map(ErrorPattern::internal).orElse(false);
+        return isInternal(stderrTail, null);
+    }
+
+    /** 仅当 stderr 命中本次实际注入的 tcp progress 端点时返回 true。 */
+    static boolean isInternal(String stderrTail, String progressArg) {
+        return classify(stderrTail, progressArg).map(ErrorPattern::internal).orElse(false);
+    }
+
+    private static ErrorPattern progressFailure(String progressArg) {
+        if (progressArg == null || !progressArg.startsWith("tcp://")) {
+            return null;
+        }
+        return ErrorPattern.internal(
+                "progress-plumbing",
+                Pattern.quote(progressArg) + "(?=[:\\s]|$)[^\\n]*Connection refused",
+                "库内部进度管道连接失败（-progress tcp 回环通道 Connection refused），属库自身管道问题、非媒体错误");
     }
 }

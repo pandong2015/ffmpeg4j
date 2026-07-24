@@ -103,6 +103,13 @@ ffmpeg4j:
   ffmpeg-path: /usr/local/bin/ffmpeg   # 留空则走 PATH 发现
   fail-fast: true                      # 启动即校验二进制
   async:
+    core-pool-size: 2                  # 默认专用有界执行器
+    max-pool-size: 4
+    queue-capacity: 64
+    thread-name-prefix: ffmpeg4j-
+    await-termination: true
+    await-termination-period: 30s
+    rejection-policy: abort            # 饱和时快速失败，不无限排队
     progress-channel: application-event
 ```
 
@@ -119,7 +126,31 @@ public class VideoService {
 }
 ```
 
-> 进度经 `FfmpegProgressEvent`（`@EventListener`）或注入的 `FfmpegProgressListener` 递送；引入 `spring-boot-starter-actuator` 即自动装配 Health/Info/Micrometer 指标。
+默认池同时承载异步门面与进度回调。应用提供唯一或 `@Primary` 的 `TaskExecutor` 时优先使用用户执行器；
+设置 `ffmpeg4j.async.use-spring-executor=false` 可保留 core 默认语义。默认 `ABORT` 策略在工作线程和队列均满时快速拒绝，
+避免无界排队拖垮进程。
+
+需要稳定任务标识、完整终态和结构化警告时，使用任务 API：
+
+```java
+TaskHandle<RunResult> task =
+        ffmpeg.transcodeTask(in, out, "libx264", "aac");
+
+log.info("taskId={}", task.taskId());
+task.completion().thenAccept(report -> {
+    log.info("taskId={} status={}", report.taskId(), report.status());
+    report.warnings().forEach(warning -> {
+        if (warning.code() == WarningCode.PROGRESS_UNAVAILABLE) {
+            log.warn("任务继续执行，但进度不可用：{}", warning.details());
+        }
+    });
+});
+```
+
+`TaskHandle` 可查询状态并通过 `cancel()` 传播取消；`TaskReport` 以 `COMPLETED`、`FAILED` 或 `CANCELLED`
+收口，包含结果、错误及有序不可变 warnings。原有同步方法和 `xxxAsync` 签名、返回类型与用法保持兼容。
+Spring 下还可订阅携同一 `taskId` 的 `FfmpegTaskEvent` 生命周期与 `FfmpegProgressEvent` 进度事件；
+引入 `spring-boot-starter-actuator` 即自动装配 Health/Info/Micrometer 指标。
 
 ---
 

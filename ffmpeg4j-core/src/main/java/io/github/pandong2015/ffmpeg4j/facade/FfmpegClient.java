@@ -26,6 +26,13 @@ import io.github.pandong2015.ffmpeg4j.env.FfmpegEnvironment;
 import io.github.pandong2015.ffmpeg4j.probe.MediaProbe;
 import io.github.pandong2015.ffmpeg4j.probe.ProbeResult;
 import io.github.pandong2015.ffmpeg4j.probe.StreamInfo;
+import io.github.pandong2015.ffmpeg4j.task.TaskEvent;
+import io.github.pandong2015.ffmpeg4j.task.TaskHandle;
+import io.github.pandong2015.ffmpeg4j.task.TaskId;
+import io.github.pandong2015.ffmpeg4j.task.FfmpegWarning;
+import io.github.pandong2015.ffmpeg4j.task.TaskWarningCollector;
+import io.github.pandong2015.ffmpeg4j.task.WarningCode;
+import io.github.pandong2015.ffmpeg4j.env.FfmpegVersion;
 
 /**
  * 可实例化的 L4 门面：承载与静态 {@link Ffmpeg} 相同的 9 个动作门面（transcode/remux/clip/extractAudio/
@@ -56,6 +63,7 @@ public class FfmpegClient {
     private final FfmpegEnvironment env;
     private final RunOptions defaultRunOptions;
     private final Executor asyncExecutor;
+    private final Consumer<TaskEvent> taskEventListener;
 
     /**
      * @param env               执行与探测所用的环境（含已解析的二进制与构建能力）
@@ -71,9 +79,24 @@ public class FfmpegClient {
      * @param asyncExecutor     {@code xxxAsync} 异步门面的执行器；{@code null} 则用 {@link ForkJoinPool#commonPool()}
      */
     public FfmpegClient(FfmpegEnvironment env, RunOptions defaultRunOptions, Executor asyncExecutor) {
+        this(env, defaultRunOptions, asyncExecutor, null);
+    }
+
+    /**
+     * @param env               执行与探测所用的环境
+     * @param defaultRunOptions 默认运行选项基线
+     * @param asyncExecutor     异步门面与任务入口的执行器；{@code null} 则使用 common pool
+     * @param taskEventListener 任务生命周期观察者；观察者异常会被隔离，{@code null} 表示不观察
+     */
+    public FfmpegClient(
+            FfmpegEnvironment env,
+            RunOptions defaultRunOptions,
+            Executor asyncExecutor,
+            Consumer<TaskEvent> taskEventListener) {
         this.env = Objects.requireNonNull(env, "env");
         this.defaultRunOptions = Objects.requireNonNull(defaultRunOptions, "defaultRunOptions");
         this.asyncExecutor = asyncExecutor != null ? asyncExecutor : ForkJoinPool.commonPool();
+        this.taskEventListener = taskEventListener;
     }
 
     /** 本实例持有的环境。 */
@@ -108,6 +131,57 @@ public class FfmpegClient {
                 eff(options.timeout(), options.onProgress()));
     }
 
+    /**
+     * 提交转码任务并立即返回带稳定标识的句柄。
+     *
+     * <p>报告以 {@code COMPLETED}/{@code FAILED}/{@code CANCELLED} 之一正常收口；调用
+     * {@link TaskHandle#cancel()} 会把取消请求传递到底层 ffmpeg 的优雅取消阶梯。
+     */
+    public TaskHandle<RunResult> transcodeTask(
+            File in, File out, String videoCodec, String audioCodec) {
+        return transcodeTask(in, out,
+                TranscodeOptions.defaults().videoCodec(videoCodec).audioCodec(audioCodec));
+    }
+
+    /**
+     * 提交转码任务并立即返回带自动生成标识的句柄。
+     *
+     * @param in      输入文件
+     * @param out     输出文件
+     * @param options 转码选项
+     */
+    public TaskHandle<RunResult> transcodeTask(File in, File out, TranscodeOptions options) {
+        return transcodeTask(TaskId.random(), in, out, options);
+    }
+
+    /**
+     * 使用调用方指定的稳定标识提交转码任务。
+     *
+     * @param taskId  非空白任务标识
+     * @param in      输入文件
+     * @param out     输出文件
+     * @param options 转码选项
+     */
+    public TaskHandle<RunResult> transcodeTask(
+            TaskId taskId, File in, File out, TranscodeOptions options) {
+        Objects.requireNonNull(taskId, "taskId");
+        Objects.requireNonNull(options, "options");
+        TaskExecution<RunResult> task =
+                new TaskExecution<>(taskId, "transcode", taskEventListener);
+        RunOptions runOptions = eff(options.timeout(), options.onProgress());
+        return task.submit(asyncExecutor, context -> {
+            collectEnvironmentWarnings();
+            CompiledCommand cmd = FacadeSupport.buildTranscode(in, out, options);
+            FfmpegRun run = new FfmpegExecutor(env).runAsync(
+                    cmd, withTaskProgress(runOptions, context));
+            context.cancellationAction(run::cancel);
+            if (context.cancellationRequested()) {
+                run.cancel();
+            }
+            return run.await();
+        });
+    }
+
     // ===== 2. remux（换容器）=====
 
     public RunResult remux(File in, File out) {
@@ -127,6 +201,26 @@ public class FfmpegClient {
     public CompletableFuture<RunResult> remuxAsync(File in, File out, RemuxOptions options) {
         return executeAsync(() -> FacadeSupport.buildRemux(in, out, probeWith(in), options),
                 eff(options.timeout(), options.onProgress()));
+    }
+
+    /** 提交 remux 任务并立即返回带自动生成标识的句柄。 */
+    public TaskHandle<RunResult> remuxTask(File in, File out, RemuxOptions options) {
+        return remuxTask(TaskId.random(), in, out, options);
+    }
+
+    /** 使用调用方指定标识提交 remux 任务；报告包含可选流缺失和字幕丢弃警告。 */
+    public TaskHandle<RunResult> remuxTask(
+            TaskId taskId, File in, File out, RemuxOptions options) {
+        Objects.requireNonNull(taskId, "taskId");
+        Objects.requireNonNull(options, "options");
+        TaskExecution<RunResult> task = new TaskExecution<>(taskId, "remux", taskEventListener);
+        RunOptions runOptions = eff(options.timeout(), options.onProgress());
+        return task.submit(asyncExecutor, context -> {
+            collectEnvironmentWarnings();
+            ProbeResult probe = probeWith(in);
+            CompiledCommand cmd = FacadeSupport.buildRemux(in, out, probe, options);
+            return runTaskCommand(context, cmd, runOptions);
+        });
     }
 
     // ===== 3. clip（截段）=====
@@ -306,32 +400,67 @@ public class FfmpegClient {
                 return super.cancel(mayInterruptIfRunning);
             }
         };
-        asyncExecutor.execute(() -> {
-            if (future.isCancelled()) {
-                return;
-            }
-            HlsPrep p = null;
-            boolean success = false;
-            try {
-                p = prepareHls(in, outDir, options);
-                FfmpegRun run = new FfmpegExecutor(env).runAsync(p.cmd, ro);
-                runRef.set(run);
+        try {
+            asyncExecutor.execute(() -> {
                 if (future.isCancelled()) {
-                    run.cancel();
                     return;
                 }
-                HlsResult result = finishHls(p, run.await());
+                HlsPrep p = null;
+                boolean success = false;
+                try {
+                    p = prepareHls(in, outDir, options);
+                    FfmpegRun run = new FfmpegExecutor(env).runAsync(p.cmd, ro);
+                    runRef.set(run);
+                    if (future.isCancelled()) {
+                        run.cancel();
+                        return;
+                    }
+                    HlsResult result = finishHls(p, run.await());
+                    success = true;
+                    future.complete(result);
+                } catch (IOException e) {
+                    future.completeExceptionally(new FfmpegException("HLS 切片 IO 失败：" + e.getMessage(), e));
+                } catch (Throwable t) {
+                    future.completeExceptionally(t);
+                } finally {
+                    cleanupHls(p, success);
+                }
+            });
+        } catch (Throwable rejection) {
+            future.completeExceptionally(rejection);
+        }
+        return future;
+    }
+
+    /** 提交单码率 HLS 任务并立即返回带自动生成标识的句柄。 */
+    public TaskHandle<HlsResult> hlsSegmentTask(File in, File outDir, HlsOptions options) {
+        return hlsSegmentTask(TaskId.random(), in, outDir, options);
+    }
+
+    /** 使用调用方指定标识提交单码率 HLS 任务，并保留失败/取消清理语义。 */
+    public TaskHandle<HlsResult> hlsSegmentTask(
+            TaskId taskId, File in, File outDir, HlsOptions options) {
+        Objects.requireNonNull(taskId, "taskId");
+        Objects.requireNonNull(options, "options");
+        TaskExecution<HlsResult> task =
+                new TaskExecution<>(taskId, "hlsSegment", taskEventListener);
+        RunOptions runOptions = eff(options.timeout(), options.onProgress());
+        return task.submit(asyncExecutor, context -> {
+            collectEnvironmentWarnings();
+            HlsPrep prepared = null;
+            boolean success = false;
+            try {
+                prepared = prepareHls(in, outDir, options);
+                RunResult run = runTaskCommand(context, prepared.cmd, runOptions);
+                HlsResult result = finishHls(prepared, run);
                 success = true;
-                future.complete(result);
+                return result;
             } catch (IOException e) {
-                future.completeExceptionally(new FfmpegException("HLS 切片 IO 失败：" + e.getMessage(), e));
-            } catch (Throwable t) {
-                future.completeExceptionally(t);
+                throw new FfmpegException("HLS 切片 IO 失败：" + e.getMessage(), e);
             } finally {
-                cleanupHls(p, success);
+                cleanupHls(prepared, success);
             }
         });
-        return future;
     }
 
     // ===== 10. hlsAbr（ABR 多码率梯 VOD 恒转码 + 可选 AES-128）=====
@@ -389,32 +518,67 @@ public class FfmpegClient {
                 return super.cancel(mayInterruptIfRunning);
             }
         };
-        asyncExecutor.execute(() -> {
-            if (future.isCancelled()) {
-                return;
-            }
-            AbrPrep p = null;
-            boolean success = false;
-            try {
-                p = prepareHlsAbr(in, outDir, options);
-                FfmpegRun run = new FfmpegExecutor(env).runAsync(p.cmd, ro);
-                runRef.set(run);
+        try {
+            asyncExecutor.execute(() -> {
                 if (future.isCancelled()) {
-                    run.cancel();
                     return;
                 }
-                HlsAbrResult result = finishHlsAbr(p, run.await());
+                AbrPrep p = null;
+                boolean success = false;
+                try {
+                    p = prepareHlsAbr(in, outDir, options);
+                    FfmpegRun run = new FfmpegExecutor(env).runAsync(p.cmd, ro);
+                    runRef.set(run);
+                    if (future.isCancelled()) {
+                        run.cancel();
+                        return;
+                    }
+                    HlsAbrResult result = finishHlsAbr(p, run.await());
+                    success = true;
+                    future.complete(result);
+                } catch (IOException e) {
+                    future.completeExceptionally(new FfmpegException("HLS ABR IO 失败：" + e.getMessage(), e));
+                } catch (Throwable t) {
+                    future.completeExceptionally(t);
+                } finally {
+                    cleanupHlsAbr(p, success);
+                }
+            });
+        } catch (Throwable rejection) {
+            future.completeExceptionally(rejection);
+        }
+        return future;
+    }
+
+    /** 提交 ABR HLS 任务并立即返回带自动生成标识的句柄。 */
+    public TaskHandle<HlsAbrResult> hlsAbrTask(File in, File outDir, HlsAbrOptions options) {
+        return hlsAbrTask(TaskId.random(), in, outDir, options);
+    }
+
+    /** 使用调用方指定标识提交 ABR HLS 任务；报告包含默认码率梯裁剪警告。 */
+    public TaskHandle<HlsAbrResult> hlsAbrTask(
+            TaskId taskId, File in, File outDir, HlsAbrOptions options) {
+        Objects.requireNonNull(taskId, "taskId");
+        Objects.requireNonNull(options, "options");
+        TaskExecution<HlsAbrResult> task =
+                new TaskExecution<>(taskId, "hlsAbr", taskEventListener);
+        RunOptions runOptions = eff(options.timeout(), options.onProgress());
+        return task.submit(asyncExecutor, context -> {
+            collectEnvironmentWarnings();
+            AbrPrep prepared = null;
+            boolean success = false;
+            try {
+                prepared = prepareHlsAbr(in, outDir, options);
+                RunResult run = runTaskCommand(context, prepared.cmd, runOptions);
+                HlsAbrResult result = finishHlsAbr(prepared, run);
                 success = true;
-                future.complete(result);
+                return result;
             } catch (IOException e) {
-                future.completeExceptionally(new FfmpegException("HLS ABR IO 失败：" + e.getMessage(), e));
-            } catch (Throwable t) {
-                future.completeExceptionally(t);
+                throw new FfmpegException("HLS ABR IO 失败：" + e.getMessage(), e);
             } finally {
-                cleanupHlsAbr(p, success);
+                cleanupHlsAbr(prepared, success);
             }
         });
-        return future;
     }
 
     // ===== 8. probe =====
@@ -426,7 +590,7 @@ public class FfmpegClient {
 
     /** {@link #probe(File)} 的异步变体：在 {@code asyncExecutor} 上执行 ffprobe，返回 {@link CompletableFuture}。 */
     public CompletableFuture<ProbeResult> probeAsync(File in) {
-        return CompletableFuture.supplyAsync(() -> probeWith(in), asyncExecutor);
+        return supplyAsync(() -> probeWith(in));
     }
 
     // ===== 内部：环境接线与异步桥接 =====
@@ -550,6 +714,16 @@ public class FfmpegClient {
                         + in + "（显式传 variants 可豁免 probe）", null);
             }
             variants = HlsLadder.cropToSourceHeight(h);
+            int defaultCount = HlsLadder.defaults().size();
+            if (variants.size() < defaultCount) {
+                TaskWarningCollector.add(new FfmpegWarning(
+                        WarningCode.ABR_LADDER_TRIMMED,
+                        "默认 ABR 码率梯已按源视频高度裁剪",
+                        java.util.Map.of(
+                                "sourceHeight", Integer.toString(h),
+                                "beforeCount", Integer.toString(defaultCount),
+                                "afterCount", Integer.toString(variants.size()))));
+            }
         }
         // 2. 把裁剪后的梯显式写回 options，交给纯函数 build（build 恒读 o.variants()）。
         HlsAbrOptions built = options.variants(variants);
@@ -643,23 +817,99 @@ public class FfmpegClient {
                 return super.cancel(mayInterruptIfRunning);
             }
         };
-        asyncExecutor.execute(() -> {
-            if (future.isCancelled()) {
+        try {
+            asyncExecutor.execute(() -> {
+                if (future.isCancelled()) {
+                    return;
+                }
+                try {
+                    CompiledCommand cmd = cmdSupplier.get();
+                    FfmpegRun run = new FfmpegExecutor(env).runAsync(cmd, ro);
+                    runRef.set(run);
+                    if (future.isCancelled()) {
+                        run.cancel();
+                        return;
+                    }
+                    future.complete(run.await());
+                } catch (Throwable t) {
+                    future.completeExceptionally(t);
+                }
+            });
+        } catch (Throwable rejection) {
+            future.completeExceptionally(rejection);
+        }
+        return future;
+    }
+
+    private <T> CompletableFuture<T> supplyAsync(Supplier<T> supplier) {
+        CompletableFuture<T> future = new CompletableFuture<>();
+        try {
+            asyncExecutor.execute(() -> {
+                try {
+                    future.complete(supplier.get());
+                } catch (Throwable t) {
+                    future.completeExceptionally(t);
+                }
+            });
+        } catch (Throwable rejection) {
+            future.completeExceptionally(rejection);
+        }
+        return future;
+    }
+
+    private RunResult runTaskCommand(
+            TaskExecution.Context context, CompiledCommand cmd, RunOptions runOptions) {
+        FfmpegRun run = new FfmpegExecutor(env).runAsync(
+                cmd, withTaskProgress(runOptions, context));
+        context.cancellationAction(run::cancel);
+        if (context.cancellationRequested()) {
+            run.cancel();
+        }
+        return run.await();
+    }
+
+    /**
+     * 生命周期进度先在 pump 线程按序入状态机；用户回调仍遵循原 callbackExecutor 配置。
+     * 这样终态不会越过尚未派发的生命周期 PROGRESS，同时不把用户重活搬回 pump 线程。
+     */
+    private RunOptions withTaskProgress(RunOptions ro, TaskExecution.Context context) {
+        Consumer<Progress> userCallback = ro.onProgress();
+        Executor callbackExecutor = ro.callbackExecutor();
+        Consumer<Progress> combined = progress -> {
+            context.progress(progress);
+            if (userCallback == null) {
+                return;
+            }
+            if (callbackExecutor == null) {
+                acceptProgressSafely(userCallback, progress);
                 return;
             }
             try {
-                CompiledCommand cmd = cmdSupplier.get();
-                FfmpegRun run = new FfmpegExecutor(env).runAsync(cmd, ro);
-                runRef.set(run);
-                if (future.isCancelled()) {
-                    run.cancel();
-                    return;
-                }
-                future.complete(run.await());
-            } catch (Throwable t) {
-                future.completeExceptionally(t);
+                callbackExecutor.execute(() -> acceptProgressSafely(userCallback, progress));
+            } catch (Throwable ignored) {
+                // 与执行引擎既有语义一致：回调派发失败不影响媒体任务。
             }
-        });
-        return future;
+        };
+        return ro.onProgress(combined).callbackExecutor(null);
+    }
+
+    private static void acceptProgressSafely(Consumer<Progress> callback, Progress progress) {
+        try {
+            callback.accept(progress);
+        } catch (Throwable ignored) {
+            // 用户进度回调必须与媒体任务结果隔离。
+        }
+    }
+
+    private void collectEnvironmentWarnings() {
+        if (env.capabilities() == null || env.version() == null || !env.version().isBelowMinimum()) {
+            return;
+        }
+        TaskWarningCollector.add(new FfmpegWarning(
+                WarningCode.VERSION_BELOW_MINIMUM,
+                "ffmpeg 版本低于建议最低版本，任务仍将继续",
+                java.util.Map.of(
+                        "detected", env.version().toString(),
+                        "minimum", FfmpegVersion.MIN_FFMPEG_VERSION)));
     }
 }

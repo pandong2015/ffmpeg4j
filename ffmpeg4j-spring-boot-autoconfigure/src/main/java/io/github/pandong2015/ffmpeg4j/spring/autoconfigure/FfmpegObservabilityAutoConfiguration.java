@@ -1,6 +1,7 @@
 package io.github.pandong2015.ffmpeg4j.spring.autoconfigure;
 
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.boot.actuate.health.HealthIndicator;
 import org.springframework.boot.actuate.info.InfoContributor;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -9,7 +10,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
-import org.springframework.core.task.TaskExecutor;
 
 import io.micrometer.core.instrument.MeterRegistry;
 
@@ -39,16 +39,20 @@ public class FfmpegObservabilityAutoConfiguration {
         @Lazy
         FfmpegClient ffmpegClient(FfmpegEnvironment ffmpegEnvironment,
                                   Ffmpeg4jProperties properties,
-                                  ObjectProvider<TaskExecutor> taskExecutors,
+                                  ConfigurableListableBeanFactory beanFactory,
                                   FfmpegProgressBridge progressBridge,
                                   ObjectProvider<MeterRegistry> registries) {
             Ffmpeg4jAutoConfiguration.ClientWiring wiring =
-                    Ffmpeg4jAutoConfiguration.resolveWiring(properties, taskExecutors, progressBridge);
+                    Ffmpeg4jAutoConfiguration.resolveWiring(properties, beanFactory, progressBridge);
             MeterRegistry registry = registries.getIfAvailable();
             if (registry == null) {
-                return new FfmpegClient(ffmpegEnvironment, wiring.runOptions(), wiring.asyncExecutor());
+                return new FfmpegClient(
+                        ffmpegEnvironment, wiring.runOptions(), wiring.asyncExecutor(),
+                        progressBridge.asTaskConsumer());
             }
-            return new MeteredFfmpegClient(ffmpegEnvironment, wiring.runOptions(), wiring.asyncExecutor(), registry);
+            return new MeteredFfmpegClient(
+                    ffmpegEnvironment, wiring.runOptions(), wiring.asyncExecutor(),
+                    registry, progressBridge.asTaskConsumer());
         }
     }
 

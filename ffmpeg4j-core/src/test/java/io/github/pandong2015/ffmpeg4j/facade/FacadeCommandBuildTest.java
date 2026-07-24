@@ -22,6 +22,8 @@ import io.github.pandong2015.ffmpeg4j.model.MediaType;
 import io.github.pandong2015.ffmpeg4j.probe.FormatInfo;
 import io.github.pandong2015.ffmpeg4j.probe.ProbeResult;
 import io.github.pandong2015.ffmpeg4j.probe.StreamInfo;
+import io.github.pandong2015.ffmpeg4j.task.TaskWarningCollector;
+import io.github.pandong2015.ffmpeg4j.task.WarningCode;
 
 /**
  * 纯 argv 断言（不依赖真实 ffmpeg）：验证各门面「构建」阶段落实了 §7.3 的正确性约束。
@@ -262,12 +264,19 @@ class FacadeCommandBuildTest {
         ProbeResult probe = probe(10.0,
                 video(0, 640, 480, "25/1"),
                 subtitle(1, "hdmv_pgs_subtitle"));
-        CompiledCommand cmd = FacadeSupport.buildRemux(
-                new File("in.mkv"), new File("out.mp4"), probe, RemuxOptions.defaults());
-        List<String> argv = cmd.argv();
-        // 图形字幕不映射，也不应出现 -c:s
-        assertFalse(argv.contains("-c:s"), "图形字幕进 mp4 应被丢弃，不应出现 -c:s: " + argv);
-        assertFalse(argv.contains("0:s:0"), "图形字幕不应被映射: " + argv);
+        try (TaskWarningCollector warnings = TaskWarningCollector.open()) {
+            CompiledCommand cmd = FacadeSupport.buildRemux(
+                    new File("in.mkv"), new File("out.mp4"), probe, RemuxOptions.defaults());
+            List<String> argv = cmd.argv();
+            // 图形字幕不映射，也不应出现 -c:s
+            assertFalse(argv.contains("-c:s"), "图形字幕进 mp4 应被丢弃，不应出现 -c:s: " + argv);
+            assertFalse(argv.contains("0:s:0"), "图形字幕不应被映射: " + argv);
+            assertEquals(List.of(
+                            WarningCode.OPTIONAL_STREAM_MISSING,
+                            WarningCode.SUBTITLE_DROPPED),
+                    warnings.snapshot().stream().map(warning -> warning.code()).toList(),
+                    "缺音轨与字幕丢弃都必须结构化收集且保持顺序");
+        }
     }
 
     @Test

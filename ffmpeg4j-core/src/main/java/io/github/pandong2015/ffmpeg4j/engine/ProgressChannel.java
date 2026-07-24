@@ -1,5 +1,9 @@
 package io.github.pandong2015.ffmpeg4j.engine;
 
+import io.github.pandong2015.ffmpeg4j.task.FfmpegWarning;
+import io.github.pandong2015.ffmpeg4j.task.TaskWarningCollector;
+import io.github.pandong2015.ffmpeg4j.task.WarningCode;
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.function.Consumer;
@@ -37,16 +41,33 @@ interface ProgressChannel extends Closeable {
      * MUST NOT 外泄为媒体错误——此处记录并降级为「无进度」。
      */
     static ProgressChannel forTopology(IoTopology topology) {
+        return forTopology(topology, TcpProgressChannel::new);
+    }
+
+    /**
+     * 依拓扑选择通道，并允许测试注入 tcp 通道工厂，避免测试环境必须具备端口绑定权限。
+     */
+    static ProgressChannel forTopology(IoTopology topology, TcpChannelFactory tcpFactory) {
         if (!topology.stdoutMedia()) {
             return new PipeProgressChannel();
         }
         try {
-            return new TcpProgressChannel();
+            return tcpFactory.create();
         } catch (IOException e) {
+            TaskWarningCollector.add(new FfmpegWarning(
+                    WarningCode.PROGRESS_UNAVAILABLE,
+                    "进度 TCP 通道不可用，任务将继续但不再提供进度",
+                    java.util.Map.of("reason", e.getClass().getSimpleName())));
             LOG.log(System.Logger.Level.WARNING,
                     "进度 tcp 端口绑定失败，降级为无进度（内部管道故障，不外泄为媒体错误）", e);
             return NoProgressChannel.INSTANCE;
         }
+    }
+
+    /** 创建已完成 bind-before-spawn 的 tcp 进度通道。 */
+    @FunctionalInterface
+    interface TcpChannelFactory {
+        ProgressChannel create() throws IOException;
     }
 
     /** 无进度通道：不注入 {@code -progress}，全部为空操作（tcp 绑定失败时的降级）。 */

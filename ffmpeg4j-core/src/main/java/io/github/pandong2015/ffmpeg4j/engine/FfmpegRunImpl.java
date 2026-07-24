@@ -291,7 +291,7 @@ final class FfmpegRunImpl implements FfmpegRun {
         joinQuietly(stdoutDiscardThread);
         String tail = stderrRing.tail();
 
-        switch (classifyTermination(code, timedOut, cancelRequested.get(), tail)) {
+        switch (classifyTermination(code, timedOut, cancelRequested.get(), tail, channel.progressArg())) {
             case TIMEOUT -> failure = new FfmpegException(code, effectiveCommand, tail,
                     "任务超时（超过配置的超时时间，已按取消阶梯终止）");
             // 调用方主动取消：非零退出属预期，返回结果而非抛异常。
@@ -301,7 +301,7 @@ final class FfmpegRunImpl implements FfmpegRun {
             case INTERNAL -> {
                 LOG.log(System.Logger.Level.WARNING,
                         "ffmpeg 因库内部管道故障非零退出（退出码 " + code + "，"
-                                + ErrorPatterns.reasonFor(tail).orElse("progress 管道故障")
+                                + ErrorPatterns.reasonFor(tail, channel.progressArg()).orElse("progress 管道故障")
                                 + "），不外泄为媒体错误");
                 result = new RunResult(code, lastProgress, effectiveCommand);
             }
@@ -322,6 +322,11 @@ final class FfmpegRunImpl implements FfmpegRun {
      * 错误）与真实媒体失败。
      */
     static Termination classifyTermination(int code, boolean timedOut, boolean cancelRequested, String tail) {
+        return classifyTermination(code, timedOut, cancelRequested, tail, null);
+    }
+
+    static Termination classifyTermination(
+            int code, boolean timedOut, boolean cancelRequested, String tail, String progressArg) {
         if (timedOut) {
             return Termination.TIMEOUT;
         }
@@ -331,7 +336,7 @@ final class FfmpegRunImpl implements FfmpegRun {
         if (code == 0) {
             return Termination.SUCCESS;
         }
-        if (ErrorPatterns.isInternal(tail)) {
+        if (ErrorPatterns.isInternal(tail, progressArg)) {
             return Termination.INTERNAL;
         }
         return Termination.MEDIA_FAILURE;

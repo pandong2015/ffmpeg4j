@@ -26,6 +26,8 @@ final class TcpProgressChannel implements ProgressChannel {
 
     /** accept 轮询超时；配合 close 标志退出，防止永久阻塞。 */
     private static final int ACCEPT_SO_TIMEOUT_MS = 500;
+    /** 明确使用 IPv4 回环，确保监听地址与传给 ffmpeg 的地址完全一致。 */
+    private static final InetAddress IPV4_LOOPBACK = ipv4Loopback();
 
     private final ServerSocket serverSocket;
     private final int port;
@@ -34,10 +36,25 @@ final class TcpProgressChannel implements ProgressChannel {
     private volatile Thread reader;
 
     TcpProgressChannel() throws IOException {
-        ServerSocket ss = new ServerSocket();
-        ss.setReuseAddress(true);
-        ss.bind(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0));
-        ss.setSoTimeout(ACCEPT_SO_TIMEOUT_MS);
+        this(new ServerSocket());
+    }
+
+    /**
+     * 注入未绑定的 socket，供不允许真实端口绑定的环境做确定性测试。
+     */
+    TcpProgressChannel(ServerSocket ss) throws IOException {
+        try {
+            ss.setReuseAddress(true);
+            ss.bind(new InetSocketAddress(IPV4_LOOPBACK, 0));
+            ss.setSoTimeout(ACCEPT_SO_TIMEOUT_MS);
+        } catch (IOException | RuntimeException initializationFailure) {
+            try {
+                ss.close();
+            } catch (IOException closeFailure) {
+                initializationFailure.addSuppressed(closeFailure);
+            }
+            throw initializationFailure;
+        }
         this.serverSocket = ss;
         this.port = ss.getLocalPort();
     }
@@ -106,6 +123,14 @@ final class TcpProgressChannel implements ProgressChannel {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
+        }
+    }
+
+    private static InetAddress ipv4Loopback() {
+        try {
+            return InetAddress.getByAddress(new byte[]{127, 0, 0, 1});
+        } catch (IOException impossible) {
+            throw new ExceptionInInitializerError(impossible);
         }
     }
 }

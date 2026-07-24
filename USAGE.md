@@ -286,6 +286,64 @@ RunResult result = future.join();
 > 异步任务在构造 `FfmpegClient` 时给定的 `Executor`（默认 `ForkJoinPool.commonPool()`）上执行；
 > 失败以原始 `FfmpegException` 完成 future。Spring Boot 下该执行器自动接为 Spring `TaskExecutor`（见 [§13](#13-spring-boot-集成)）。
 
+### 带 taskId、终态报告与 warnings 的任务 API
+
+现有同步方法和 `xxxAsync` 完全保留。需要在任务完成前取得稳定标识，或需要结构化终态与非致命警告时，
+使用 `transcodeTask`：
+
+```java
+import io.github.pandong2015.ffmpeg4j.task.FfmpegWarning;
+import io.github.pandong2015.ffmpeg4j.task.TaskHandle;
+import io.github.pandong2015.ffmpeg4j.task.TaskReport;
+import io.github.pandong2015.ffmpeg4j.task.TaskStatus;
+import io.github.pandong2015.ffmpeg4j.task.WarningCode;
+
+TaskHandle<RunResult> task =
+        client.transcodeTask(new File("in.mp4"), new File("out.mp4"), "libx264", "aac");
+
+// 提交后立即可用，可写入业务日志或持久化记录。
+String taskId = task.taskId().value();
+TaskStatus current = task.status();
+
+task.completion().thenAccept(report -> {
+    switch (report.status()) {
+        case COMPLETED -> use(report.result());
+        case FAILED -> log.error("taskId={} 转码失败", report.taskId(), report.error());
+        case CANCELLED -> log.info("taskId={} 已取消", report.taskId());
+        default -> throw new IllegalStateException("报告只能处于终态");
+    }
+
+    // 业务分支只依赖稳定 code；message/details 用于诊断，不应用作协议。
+    for (FfmpegWarning warning : report.warnings()) {
+        switch (warning.code()) {
+            case PROGRESS_UNAVAILABLE ->
+                    log.warn("taskId={} 无进度，媒体任务仍继续：{}",
+                            report.taskId(), warning.details());
+            case SUBTITLE_DROPPED ->
+                    notifySubtitleDropped(report.taskId(), warning.details());
+            default ->
+                    log.info("taskId={} warning={} message={}",
+                            report.taskId(), warning.code(), warning.message());
+        }
+    }
+});
+
+// 复用 q → SIGTERM → SIGKILL 取消阶梯。
+task.cancel();
+```
+
+`TaskHandle.completion()` 正常完成为 `TaskReport`；报告终态是 `COMPLETED`、`FAILED` 或 `CANCELLED`。
+`result` 只在成功时存在，`error` 只在失败时存在，`warnings` 按产生顺序提供不可变快照。当前稳定 warning code：
+
+- `PROGRESS_UNAVAILABLE`
+- `VERSION_BELOW_MINIMUM`
+- `OPTIONAL_STREAM_MISSING`
+- `SUBTITLE_DROPPED`
+- `ABR_LADDER_TRIMMED`
+
+如需使用业务侧已有标识，可调用接收 `TaskId` 的重载；空白标识会立即被拒绝。旧的同步 API、`xxxAsync`
+及 `RunResult` 结构均未改变，现有调用方无需迁移。
+
 ---
 
 ## 8. probe：结构化元数据
@@ -447,9 +505,24 @@ ffmpeg4j:
   terminate-grace-period: 5s
   min-version-check: true                 # 版本 <4.2 仅告警不硬失败
   async:
-    use-spring-executor: true             # 进度回调接 Spring TaskExecutor（移出 pump 线程）
+    use-spring-executor: true             # 异步门面与进度回调接 Spring TaskExecutor
+    core-pool-size: 2                     # 默认专用有界执行器；必须 > 0
+    max-pool-size: 4                      # 必须 >= core-pool-size
+    queue-capacity: 64                    # 有界队列；0 表示直接交接
+    thread-name-prefix: ffmpeg4j-
+    await-termination: true               # 关闭容器时等待已提交任务
+    await-termination-period: 30s
+    rejection-policy: abort               # abort（默认）| caller-runs
     progress-channel: application-event   # application-event | listener | both
 ```
+
+默认执行器不会使用无界队列。工作线程和队列都满时，`abort` 会立即以可诊断的拒绝异常失败，形成明确背压；
+不会阻塞提交线程或静默丢弃任务。`caller-runs` 会让提交线程亲自执行，可能阻塞 Web 请求线程，只应显式评估后启用。
+线程数、队列容量或关闭等待时间越界时，应用会在启动期失败并指出对应属性。
+
+如果容器中存在唯一或 `@Primary` 的用户 `TaskExecutor`，ffmpeg4j 会优先将异步门面和进度回调同时绑定到它；
+否则使用 `ffmpeg4jTaskExecutor`。用户执行器的关闭生命周期由用户 bean 自己管理，默认执行器则由 Spring 初始化并在
+容器关闭时按上述期限等待。设置 `use-spring-executor=false` 后不会创建或强制绑定默认执行器，恢复 core 默认行为。
 
 ### 注入使用
 
@@ -492,6 +565,20 @@ FfmpegProgressListener myProgressListener() {
     return event -> log.info("进度 {}", event.progress().raw());
 }
 ```
+
+任务 API 还会发布完整生命周期事件。同一任务的 `STARTED`、零到多个 `PROGRESS`、以及唯一
+`COMPLETED`/`FAILED`/`CANCELLED` 终态携带同一个 `taskId` 和 `operation`：
+
+```java
+@EventListener
+public void onTaskEvent(FfmpegTaskEvent event) {
+    log.info("taskId={} operation={} status={}",
+            event.taskId(), event.operation(), event.status());
+}
+```
+
+取消中的任务还会发布 `CANCELLING`。同一 taskId 的事件按顺序派发；事件发布器或 listener 抛出的异常会被隔离，
+不会改变媒体任务结果。`FfmpegProgressEvent` 对任务 API 同样携带非空 `taskId` 和 `operation`。
 
 ### 可观测（可选）
 
