@@ -9,8 +9,11 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.Closeable;
+import java.io.IOException;
 
 import org.junit.jupiter.api.Test;
+import io.github.pandong2015.ffmpeg4j.task.TaskWarningCollector;
+import io.github.pandong2015.ffmpeg4j.task.WarningCode;
 
 /**
  * {@link ProgressChannel} 的纯逻辑测试：聚焦 {@link ProgressChannel.NoProgressChannel} 降级通道的
@@ -97,5 +100,19 @@ class ProgressChannelTest {
         ProgressChannel channel = ProgressChannel.forTopology(new IoTopology(true, false));
         assertInstanceOf(PipeProgressChannel.class, channel, "只要 stdout 不传媒体就选 pipe 通道");
         assertEquals("pipe:1", channel.progressArg(), "pipe 通道注入参数应为 pipe:1");
+    }
+
+    @Test
+    void tcp绑定失败降级时产生结构化警告() {
+        try (TaskWarningCollector warnings = TaskWarningCollector.open()) {
+            ProgressChannel channel = ProgressChannel.forTopology(
+                    new IoTopology(false, true), () -> {
+                        throw new IOException("bind denied");
+                    });
+
+            assertSame(ProgressChannel.NoProgressChannel.INSTANCE, channel);
+            assertEquals(1, warnings.snapshot().size());
+            assertEquals(WarningCode.PROGRESS_UNAVAILABLE, warnings.snapshot().get(0).code());
+        }
     }
 }

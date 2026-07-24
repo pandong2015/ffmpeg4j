@@ -50,6 +50,48 @@
       "type": "io.github.pandong2015.ffmpeg4j.spring.autoconfigure.ProgressChannel",
       "description": "进度递送通道：application-event（广播）/ listener（直投）/ both。",
       "defaultValue": "application-event"
+    },
+    {
+      "name": "ffmpeg4j.async.core-pool-size",
+      "type": "java.lang.Integer",
+      "description": "ffmpeg4j 专用默认执行器的核心线程数，必须大于 0。",
+      "defaultValue": 2
+    },
+    {
+      "name": "ffmpeg4j.async.max-pool-size",
+      "type": "java.lang.Integer",
+      "description": "ffmpeg4j 专用默认执行器的最大线程数，必须大于等于 core-pool-size。",
+      "defaultValue": 4
+    },
+    {
+      "name": "ffmpeg4j.async.queue-capacity",
+      "type": "java.lang.Integer",
+      "description": "ffmpeg4j 专用默认执行器的有界等待队列容量，必须大于等于 0。",
+      "defaultValue": 64
+    },
+    {
+      "name": "ffmpeg4j.async.thread-name-prefix",
+      "type": "java.lang.String",
+      "description": "ffmpeg4j 专用默认执行器的线程名前缀。",
+      "defaultValue": "ffmpeg4j-"
+    },
+    {
+      "name": "ffmpeg4j.async.await-termination",
+      "type": "java.lang.Boolean",
+      "description": "容器关闭时是否等待已提交任务完成。",
+      "defaultValue": true
+    },
+    {
+      "name": "ffmpeg4j.async.await-termination-period",
+      "type": "java.time.Duration",
+      "description": "容器关闭时等待已提交任务完成的最长期限，必须非负。",
+      "defaultValue": "30s"
+    },
+    {
+      "name": "ffmpeg4j.async.rejection-policy",
+      "type": "io.github.pandong2015.ffmpeg4j.spring.autoconfigure.Ffmpeg4jProperties$RejectionPolicy",
+      "description": "执行器饱和时的拒绝策略；abort 快速失败，caller-runs 由提交线程执行。",
+      "defaultValue": "abort"
     }
   ],
   "hints": [
@@ -67,6 +109,19 @@
         {
           "value": "both",
           "description": "两条通道都递送。"
+        }
+      ]
+    },
+    {
+      "name": "ffmpeg4j.async.rejection-policy",
+      "values": [
+        {
+          "value": "abort",
+          "description": "快速拒绝并向提交方抛出可诊断异常（默认）。"
+        },
+        {
+          "value": "caller-runs",
+          "description": "由提交线程执行；可能阻塞调用线程，须显式选择。"
         }
       ]
     }

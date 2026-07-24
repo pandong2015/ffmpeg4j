@@ -3,8 +3,15 @@ package io.github.pandong2015.ffmpeg4j.engine;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.SocketAddress;
+import java.net.SocketException;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -71,14 +78,10 @@ class FfmpegCommandBuildTest {
         assertEquals("pipe:1", pipe.progressArg());
         pipe.close();
 
-        // stdout 传媒体 → tcp 通道（构造即 bind 回环端口）。
-        ProgressChannel tcp = ProgressChannel.forTopology(new IoTopology(false, true));
-        try {
-            assertInstanceOf(TcpProgressChannel.class, tcp, "stdout 传媒体应选 tcp 通道");
-            assertTrue(tcp.progressArg().startsWith("tcp://127.0.0.1:"), "tcp 通道应监听回环地址");
-        } finally {
-            tcp.close();
-        }
+        // stdout 传媒体 → tcp 通道。注入工厂使测试不依赖环境是否允许真实 bind。
+        ProgressChannel marker = ProgressChannel.NoProgressChannel.INSTANCE;
+        ProgressChannel tcp = ProgressChannel.forTopology(new IoTopology(false, true), () -> marker);
+        assertEquals(marker, tcp, "stdout 传媒体应调用注入的 tcp 通道工厂");
 
         // 喂输入但 stdout 空闲 → 仍走 pipe（进度与 stdin 无关）。
         ProgressChannel fedPipe = ProgressChannel.forTopology(new IoTopology(true, false));
@@ -103,8 +106,46 @@ class FfmpegCommandBuildTest {
         // 由 doAwait 以 RunResult 正常返回而非抛媒体类 FfmpegException。
         assertEquals(FfmpegRunImpl.Termination.INTERNAL,
                 FfmpegRunImpl.classifyTermination(1, false, false,
-                        "tcp://127.0.0.1:54321: Connection refused"),
+                        "tcp://127.0.0.1:54321: Connection refused",
+                        "tcp://127.0.0.1:54321"),
                 "回环进度管道 Connection refused 应归 INTERNAL，不外泄为媒体错误");
+    }
+
+    @Test
+    void 归类_用户localhost媒体失败不冒充本次progress故障() {
+        assertEquals(FfmpegRunImpl.Termination.MEDIA_FAILURE,
+                FfmpegRunImpl.classifyTermination(1, false, false,
+                        "tcp://127.0.0.1:9000: Connection refused",
+                        "tcp://127.0.0.1:54321"),
+                "只有本次实际注入的 progress 端点才能归为内部故障");
+    }
+
+    @Test
+    void tcp监听与progress参数使用同一IPv4回环地址() throws IOException {
+        RecordingServerSocket socket = new RecordingServerSocket(54321);
+        TcpProgressChannel channel = new TcpProgressChannel(socket);
+        try {
+            InetSocketAddress bound = (InetSocketAddress) socket.boundAddress;
+            assertEquals("127.0.0.1", bound.getAddress().getHostAddress(), "监听必须明确绑定 IPv4 回环");
+            assertEquals("tcp://127.0.0.1:54321", channel.progressArg(),
+                    "发布给 ffmpeg 的地址必须与监听地址及实际端口一致");
+        } finally {
+            channel.close();
+        }
+    }
+
+    @Test
+    void tcp初始化失败会关闭socket并保留关闭失败() throws IOException {
+        IOException bindFailure = new IOException("bind failed");
+        IOException closeFailure = new IOException("close failed");
+        FailingServerSocket socket = new FailingServerSocket(bindFailure, closeFailure);
+
+        IOException thrown = assertThrows(IOException.class, () -> new TcpProgressChannel(socket));
+
+        assertSame(bindFailure, thrown, "应保留初始化阶段的原始异常");
+        assertTrue(socket.closeCalled, "初始化失败必须关闭尚未交由通道管理的 socket");
+        assertEquals(1, thrown.getSuppressed().length, "关闭失败应作为 suppressed 保留");
+        assertSame(closeFailure, thrown.getSuppressed()[0]);
     }
 
     @Test
@@ -121,5 +162,68 @@ class FfmpegCommandBuildTest {
         assertEquals(FfmpegRunImpl.Termination.TIMEOUT,
                 FfmpegRunImpl.classifyTermination(255, true, true, ""),
                 "超时抢先时（timedOut=true）应判 TIMEOUT，优先于取消返回");
+    }
+
+    /** 只记录绑定参数，不触碰操作系统网络能力。 */
+    private static final class RecordingServerSocket extends ServerSocket {
+        private final int localPort;
+        private SocketAddress boundAddress;
+
+        private RecordingServerSocket(int localPort) throws IOException {
+            this.localPort = localPort;
+        }
+
+        @Override
+        public void setReuseAddress(boolean on) throws SocketException {
+            // 无需设置真实 socket 选项。
+        }
+
+        @Override
+        public void bind(SocketAddress endpoint) {
+            this.boundAddress = endpoint;
+        }
+
+        @Override
+        public void setSoTimeout(int timeout) throws SocketException {
+            // 无需设置真实 socket 选项。
+        }
+
+        @Override
+        public int getLocalPort() {
+            return localPort;
+        }
+
+        @Override
+        public void close() {
+            // 无真实资源。
+        }
+    }
+
+    /** 在 bind 与 close 阶段分别失败，用于锁定初始化失败时的资源清理契约。 */
+    private static final class FailingServerSocket extends ServerSocket {
+        private final IOException bindFailure;
+        private final IOException closeFailure;
+        private boolean closeCalled;
+
+        private FailingServerSocket(IOException bindFailure, IOException closeFailure) throws IOException {
+            this.bindFailure = bindFailure;
+            this.closeFailure = closeFailure;
+        }
+
+        @Override
+        public void setReuseAddress(boolean on) throws SocketException {
+            // 让初始化继续到 bind。
+        }
+
+        @Override
+        public void bind(SocketAddress endpoint) throws IOException {
+            throw bindFailure;
+        }
+
+        @Override
+        public void close() throws IOException {
+            closeCalled = true;
+            throw closeFailure;
+        }
     }
 }

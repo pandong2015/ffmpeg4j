@@ -2,6 +2,7 @@ package io.github.pandong2015.ffmpeg4j.spring.autoconfigure;
 
 import java.time.Duration;
 
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.NestedConfigurationProperty;
 
@@ -13,7 +14,7 @@ import org.springframework.boot.context.properties.NestedConfigurationProperty;
  * {@code PT30S}）。
  */
 @ConfigurationProperties(prefix = "ffmpeg4j")
-public class Ffmpeg4jProperties {
+public class Ffmpeg4jProperties implements InitializingBean {
 
     /** 显式 ffmpeg 二进制路径；留空则走 PATH 发现。与 {@link #ffprobePath} 须同配或同空。 */
     private String ffmpegPath;
@@ -100,6 +101,11 @@ public class Ffmpeg4jProperties {
         return async;
     }
 
+    @Override
+    public void afterPropertiesSet() {
+        async.validate();
+    }
+
     /** 异步执行与进度事件派发配置。 */
     public static class Async {
 
@@ -108,6 +114,27 @@ public class Ffmpeg4jProperties {
 
         /** 进度递送通道：application-event（广播）/ listener（直投）/ both（默认 application-event）。 */
         private ProgressChannel progressChannel = ProgressChannel.APPLICATION_EVENT;
+
+        /** 默认专用执行器的核心线程数。 */
+        private int corePoolSize = 2;
+
+        /** 默认专用执行器的最大线程数。 */
+        private int maxPoolSize = 4;
+
+        /** 默认专用执行器的有界等待队列容量。 */
+        private int queueCapacity = 64;
+
+        /** 默认专用执行器的线程名前缀。 */
+        private String threadNamePrefix = "ffmpeg4j-";
+
+        /** 容器关闭时是否等待已提交任务完成。 */
+        private boolean awaitTermination = true;
+
+        /** 容器关闭时等待已提交任务完成的最长期限。 */
+        private Duration awaitTerminationPeriod = Duration.ofSeconds(30);
+
+        /** 执行器饱和时的拒绝策略。 */
+        private RejectionPolicy rejectionPolicy = RejectionPolicy.ABORT;
 
         public boolean isUseSpringExecutor() {
             return useSpringExecutor;
@@ -124,5 +151,89 @@ public class Ffmpeg4jProperties {
         public void setProgressChannel(ProgressChannel progressChannel) {
             this.progressChannel = progressChannel;
         }
+
+        public int getCorePoolSize() {
+            return corePoolSize;
+        }
+
+        public void setCorePoolSize(int corePoolSize) {
+            this.corePoolSize = corePoolSize;
+        }
+
+        public int getMaxPoolSize() {
+            return maxPoolSize;
+        }
+
+        public void setMaxPoolSize(int maxPoolSize) {
+            this.maxPoolSize = maxPoolSize;
+        }
+
+        public int getQueueCapacity() {
+            return queueCapacity;
+        }
+
+        public void setQueueCapacity(int queueCapacity) {
+            this.queueCapacity = queueCapacity;
+        }
+
+        public String getThreadNamePrefix() {
+            return threadNamePrefix;
+        }
+
+        public void setThreadNamePrefix(String threadNamePrefix) {
+            this.threadNamePrefix = threadNamePrefix;
+        }
+
+        public boolean isAwaitTermination() {
+            return awaitTermination;
+        }
+
+        public void setAwaitTermination(boolean awaitTermination) {
+            this.awaitTermination = awaitTermination;
+        }
+
+        public Duration getAwaitTerminationPeriod() {
+            return awaitTerminationPeriod;
+        }
+
+        public void setAwaitTerminationPeriod(Duration awaitTerminationPeriod) {
+            this.awaitTerminationPeriod = awaitTerminationPeriod;
+        }
+
+        public RejectionPolicy getRejectionPolicy() {
+            return rejectionPolicy;
+        }
+
+        public void setRejectionPolicy(RejectionPolicy rejectionPolicy) {
+            this.rejectionPolicy = rejectionPolicy;
+        }
+
+        private void validate() {
+            require(corePoolSize > 0, "ffmpeg4j.async.core-pool-size 必须大于 0");
+            require(maxPoolSize > 0, "ffmpeg4j.async.max-pool-size 必须大于 0");
+            require(maxPoolSize >= corePoolSize,
+                    "ffmpeg4j.async.max-pool-size 必须大于等于 ffmpeg4j.async.core-pool-size");
+            require(queueCapacity >= 0, "ffmpeg4j.async.queue-capacity 必须大于等于 0");
+            require(threadNamePrefix != null && !threadNamePrefix.isBlank(),
+                    "ffmpeg4j.async.thread-name-prefix 不得为空");
+            require(awaitTerminationPeriod != null && !awaitTerminationPeriod.isNegative(),
+                    "ffmpeg4j.async.await-termination-period 必须大于等于 0");
+            require(rejectionPolicy != null, "ffmpeg4j.async.rejection-policy 不得为空");
+            require(progressChannel != null, "ffmpeg4j.async.progress-channel 不得为空");
+        }
+
+        private static void require(boolean condition, String message) {
+            if (!condition) {
+                throw new IllegalStateException(message);
+            }
+        }
+    }
+
+    /** 默认执行器饱和时允许使用的非静默拒绝策略。 */
+    public enum RejectionPolicy {
+        /** 快速拒绝并向提交方抛出可诊断异常。 */
+        ABORT,
+        /** 由提交线程执行；可能阻塞调用方，须显式启用。 */
+        CALLER_RUNS
     }
 }

@@ -18,7 +18,7 @@ starter 引入后，autoconfigure 模块 MUST 以 `@AutoConfiguration` 在应用
 - **THEN** 上下文中不存在任何 ffmpeg4j 相关 bean，自动装配对未引入方零副作用
 
 ### Requirement: 配置属性绑定
-autoconfigure MUST 提供 `@ConfigurationProperties(prefix = "ffmpeg4j")` 的 `Ffmpeg4jProperties`，将 `application.yml`/`application.properties` 中的键绑定为强类型配置并驱动 bean 构造。绑定 MUST 覆盖：`ffmpeg-path`/`ffprobe-path`（显式二进制路径）、`fail-fast`（布尔，默认 `true`）、`default-timeout`（`Duration`，默认无）、`cancel-grace-period`（`Duration`，默认 `5s`）、`terminate-grace-period`（`Duration`，默认 `5s`）、`min-version-check`（布尔）、`async.use-spring-executor`（布尔，默认 `true`）、`async.progress-channel`（枚举 `application-event`/`listener`/`both`，默认 `application-event`）。`Duration` 类属性 MUST 支持 Spring 松弛绑定（如 `30s`/`PT30S`），并 MUST 映射进装配 `FfmpegClient` 所用的默认 `RunOptions`。
+autoconfigure MUST 提供 `@ConfigurationProperties(prefix = "ffmpeg4j")` 的强类型配置。绑定 MUST 覆盖：`ffmpeg-path`/`ffprobe-path`（显式二进制路径）、`fail-fast`（布尔，默认 `true`）、`default-timeout`（`Duration`，默认无）、`cancel-grace-period`（`Duration`，默认 `5s`）、`terminate-grace-period`（`Duration`，默认 `5s`）、`min-version-check`（布尔）、`async.use-spring-executor`（布尔，默认 `true`）、`async.progress-channel`（枚举 `application-event`/`listener`/`both`，默认 `application-event`）、`async.core-pool-size`、`async.max-pool-size`、`async.queue-capacity`、`async.thread-name-prefix`、`async.await-termination` 与 `async.await-termination-period`。`Duration` 类属性 MUST 支持 Spring 松弛绑定（如 `30s`/`PT30S`），并 MUST 映射进装配 `FfmpegClient` 所用的默认 `RunOptions`。线程数 MUST 为正，max MUST 不小于 core，队列容量 MUST 大于等于零，等待时长 MUST 非负；非法配置 MUST 在启动期给出可诊断绑定/校验错误。
 
 #### Scenario: 超时与宽限期绑定进 RunOptions
 - **WHEN** `application.yml` 配置 `ffmpeg4j.default-timeout: 30s` 与 `ffmpeg4j.cancel-grace-period: 8s`
@@ -27,6 +27,18 @@ autoconfigure MUST 提供 `@ConfigurationProperties(prefix = "ffmpeg4j")` 的 `F
 #### Scenario: 空配置采用文档化默认值
 - **WHEN** 应用未提供任何 `ffmpeg4j.*` 键
 - **THEN** `fail-fast` 为 `true`、`default-timeout` 为无（不超时）、两个 grace-period 均为 5 秒，绑定不因缺键而报错
+
+#### Scenario: 默认执行器属性采用有界值
+- **WHEN** 应用未配置 async 线程池属性
+- **THEN** core/max/queue 均采用文档化的有限正整数，线程名前缀为 `ffmpeg4j-`，不得形成无界队列
+
+#### Scenario: 自定义线程池属性生效
+- **WHEN** 配置 core=2、max=4、queue-capacity=8、await-termination-period=20s
+- **THEN** 默认执行器按该容量创建，并在容器关闭时最多等待 20 秒
+
+#### Scenario: 非法容量启动失败
+- **WHEN** max-pool-size 小于 core-pool-size 或 queue-capacity 为负
+- **THEN** 应用上下文启动失败并明确指出非法属性，MUST NOT 静默纠正
 
 ### Requirement: 显式路径优先否则 PATH 发现
 autoconfigure 构造 `FfmpegEnvironment` 时 MUST 遵循「显式路径优先，否则 PATH 发现」的发现顺序：当 `ffmpeg-path` 与 `ffprobe-path` 均被配置为非空时，MUST 经 `FfmpegBinaries.of(ffmpeg, ffprobe)` 使用该显式路径而不做 PATH 查找；当二者均未配置时，MUST 退回 core 的 PATH 发现（locate）逻辑。二者只配其一 MUST 被视为可诊断的配置错误而非静默半发现。
@@ -75,3 +87,14 @@ autoconfigure 装配的每一个默认 bean（`FfmpegEnvironment`/`FfmpegExecuto
 #### Scenario: starter 仅聚合不含逻辑
 - **WHEN** 检视 `ffmpeg4j-spring-boot-starter` 模块
 - **THEN** 其为不含 Java 源码的空 pom，仅通过依赖聚合 `ffmpeg4j-spring-boot-autoconfigure`（后者再传递 `ffmpeg4j-core`），装配逻辑全部驻留于 autoconfigure 模块
+
+### Requirement: 专用默认执行器条件装配与关闭
+autoconfigure MUST 在启用 Spring 执行器且没有用户唯一/主候选时创建名称稳定的 ffmpeg4j 专用 `ThreadPoolTaskExecutor`。执行器 MUST 使用有界队列、命名线程、拒绝时抛可诊断异常，并由 Spring 管理初始化与销毁；存在用户候选时默认执行器 MUST 退让。
+
+#### Scenario: 饱和时快速拒绝
+- **WHEN** 活跃线程和有界队列均已满
+- **THEN** 新异步任务以可诊断拒绝异常快速失败，不得无限排队或阻塞提交线程
+
+#### Scenario: 容器关闭等待任务
+- **WHEN** await-termination 开启且 Spring 上下文关闭
+- **THEN** 默认执行器停止接收新任务并按配置等待已提交任务收口，超时后继续关闭

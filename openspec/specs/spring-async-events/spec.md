@@ -7,19 +7,19 @@
 ## Requirements
 
 ### Requirement: callbackExecutor 绑定 Spring TaskExecutor
-autoconfigure MUST 在 `ffmpeg4j.async.use-spring-executor` 为 `true`（默认）时，将 core 执行引擎的进度 `callbackExecutor` 绑定到容器中的 Spring `TaskExecutor`（存在多个候选时优先应用主 `TaskExecutor`/`@Primary`，否则回退到 Boot 默认 `applicationTaskExecutor`），使进度回调统一在受管线程池上派发。当该开关为 `false` 时，autoconfigure MUST NOT 覆盖 `callbackExecutor`，保留 core 默认（回调在进度 pump 线程触发）语义。绑定 MUST 走 core 既有的 `RunOptions.callbackExecutor(...)`/`FfmpegClient` 默认 `RunOptions` 注入面，MUST NOT 另立并行的进度分发通道。
+autoconfigure MUST 在 `ffmpeg4j.async.use-spring-executor` 为 `true`（默认）时，将 core 执行引擎的进度 `callbackExecutor` 与异步门面执行器绑定到 Spring `TaskExecutor`。存在用户候选时 MUST 优先唯一/`@Primary` 候选；无用户候选时 MUST 自动提供 ffmpeg4j 专用的有界默认执行器，MUST NOT 回退到 common pool 或进度 pump 线程。开关为 `false` 时 autoconfigure MUST NOT 覆盖 `callbackExecutor`，保留 core 默认语义。绑定 MUST 走既有 `RunOptions.callbackExecutor(...)` 与 `FfmpegClient` 构造注入面。
 
-#### Scenario: 默认接入 Spring TaskExecutor
-- **WHEN** 应用上下文含一个 `TaskExecutor` bean 且 `ffmpeg4j.async.use-spring-executor` 未显式配置
-- **THEN** 装配出的 `FfmpegClient` 默认 `RunOptions` 的 `callbackExecutor` 为该 Spring `TaskExecutor`，进度回调在其线程池上派发
+#### Scenario: 用户执行器优先
+- **WHEN** 应用上下文含唯一或 `@Primary` 的用户 `TaskExecutor`，且 use-spring-executor 未关闭
+- **THEN** FfmpegClient 的异步执行与进度回调均使用该用户执行器，默认 ffmpeg4j 执行器退让
+
+#### Scenario: 缺少用户执行器时创建有界默认
+- **WHEN** use-spring-executor 为默认 true 且上下文没有用户 TaskExecutor
+- **THEN** autoconfigure 创建并绑定 ffmpeg4j 专用有界执行器，进度回调不占 pump 线程
 
 #### Scenario: 开关关闭时保留 core 默认
 - **WHEN** 配置 `ffmpeg4j.async.use-spring-executor=false`
-- **THEN** autoconfigure 不覆盖 `callbackExecutor`，进度回调沿用 core 默认（进度 pump 线程）语义，且用户仍可自行显式设置 `callbackExecutor`
-
-#### Scenario: 缺少 TaskExecutor 时不硬失败
-- **WHEN** 开关为默认 `true` 但上下文中不存在任何 `TaskExecutor` bean
-- **THEN** autoconfigure 回退到 core 默认回调派发而非启动失败，并记录一条可诊断说明（未找到 `TaskExecutor`，进度回调将走 pump 线程）
+- **THEN** autoconfigure 不覆盖 callbackExecutor，且不为 FfmpegClient 强制绑定默认 Spring 执行器
 
 ### Requirement: 进度递送双通道且经 executor 派发不占 pump 线程
 starter MUST 提供两条可切换的进度递送通道，由 `ffmpeg4j.async.progress-channel` 选择——`application-event`（把进度桥接为 Spring 应用事件 `FfmpegProgressEvent`、携当前 `Progress` 快照与任务标识，经 `ApplicationEventPublisher.publishEvent(...)` 广播）、`listener`（直接回调容器中注入的 `FfmpegProgressListener` bean，若存在）、`both`（两者并投），默认 `application-event`。无论哪条通道，进度的构造与递送 MUST 经绑定的 `TaskExecutor` 异步派发，桥接层 MUST NOT 在进度 pump 线程上同步 `publishEvent`/回调 listener——呼应 core「进度回调必须非阻塞、绝不占 pump 线程」的铁律（pipe 模式下 pump 线程是子进程 stdout 的唯一排空者，任何阻塞都可能撑满管道致死锁）。任一事件监听器/listener 抛出的异常 MUST 被桥接层隔离（记录而不上抛），MUST NOT 传播回进度采集路径而影响后续进度块或任务本身的推进。
@@ -54,3 +54,14 @@ starter MUST 提供两条可切换的进度递送通道，由 `ffmpeg4j.async.pr
 #### Scenario: 取消异步任务复用优雅阶梯
 - **WHEN** 用户取消一个仍在运行的异步任务句柄
 - **THEN** 引擎按 core 既有优雅取消阶梯终止子进程（写 `q`，必要时降级 SIGTERM/SIGKILL），`CompletableFuture` 随之收口为取消/失败
+
+### Requirement: Spring 生命周期事件关联 taskId
+Spring 事件桥 MUST 发布携同一 taskId、operation、时间戳与状态的任务生命周期事件；`FfmpegProgressEvent` MUST 携非空 taskId。事件发布和 listener 直投 MUST 经绑定执行器派发，监听器异常 MUST 隔离。
+
+#### Scenario: 进度与终态可关联
+- **WHEN** Spring 门面任务产生进度并成功完成
+- **THEN** STARTED、全部进度事件与 COMPLETED 携相同 taskId 和 operation
+
+#### Scenario: 监听器异常不改变终态
+- **WHEN** 生命周期监听器抛出 RuntimeException
+- **THEN** 桥接层记录并隔离异常，任务仍按真实执行结果发布唯一终态

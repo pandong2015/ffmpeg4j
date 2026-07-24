@@ -159,11 +159,12 @@ class ErrorPatternsTest {
     @Test
     void tcp_connection_refused归内部且不外泄() {
         String stderr = "tcp://127.0.0.1:54321: Connection refused";
-        Optional<ErrorPattern> p = ErrorPatterns.classify(stderr);
+        Optional<ErrorPattern> p = ErrorPatterns.classify(stderr, "tcp://127.0.0.1:54321");
         assertTrue(p.isPresent(), "应命中");
         assertEquals("progress-plumbing", p.get().category());
         assertTrue(p.get().internal(), "progress-plumbing 须标记为内部管道故障");
-        assertTrue(ErrorPatterns.isInternal(stderr), "isInternal 应为 true——不外泄为媒体错误");
+        assertTrue(ErrorPatterns.isInternal(stderr, "tcp://127.0.0.1:54321"),
+                "命中本次实际 progress 端点时 isInternal 应为 true");
     }
 
     @Test
@@ -189,10 +190,19 @@ class ErrorPatternsTest {
 
     @Test
     void 回环进度端点ConnectionRefused仍判为内部管道() {
-        // 收窄后：仅回环地址（127.0.0.1/localhost/[::1]）的 Connection refused 才算库内部进度管道故障。
-        assertTrue(ErrorPatterns.isInternal("tcp://127.0.0.1:54321: Connection refused"));
-        assertTrue(ErrorPatterns.isInternal("Failed to open tcp://localhost:8000: Connection refused"));
-        assertTrue(ErrorPatterns.isInternal("tcp://[::1]:9000: Connection refused"));
+        String endpoint = "tcp://127.0.0.1:54321";
+        assertTrue(ErrorPatterns.isInternal(endpoint + ": Connection refused", endpoint));
+        assertFalse(ErrorPatterns.isInternal(
+                "tcp://127.0.0.1:9000: Connection refused", endpoint),
+                "用户的其他 localhost 端点不得冒充内部 progress 故障");
+        assertFalse(ErrorPatterns.isInternal(
+                "tcp://127.0.0.1:543210: Connection refused", endpoint),
+                "端口具有相同前缀时也必须按完整端点区分");
+        assertFalse(ErrorPatterns.isInternal(
+                "tcp://127.0.0.1:54321/live: Connection refused", endpoint),
+                "同主机端口但带路径的用户媒体 URL 不得冒充内部 progress 故障");
+        assertFalse(ErrorPatterns.isInternal(endpoint + ": Connection refused", null),
+                "未实际注入 tcp progress 时不得推断为内部故障");
     }
 
     @Test

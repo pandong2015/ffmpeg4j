@@ -30,6 +30,9 @@ import io.github.pandong2015.ffmpeg4j.model.VideoNormTarget;
 import io.github.pandong2015.ffmpeg4j.model.VideoStream;
 import io.github.pandong2015.ffmpeg4j.probe.ProbeResult;
 import io.github.pandong2015.ffmpeg4j.probe.StreamInfo;
+import io.github.pandong2015.ffmpeg4j.task.FfmpegWarning;
+import io.github.pandong2015.ffmpeg4j.task.TaskWarningCollector;
+import io.github.pandong2015.ffmpeg4j.task.WarningCode;
 
 /**
  * L4 门面的内部支撑：把「构建 {@link CompiledCommand}」与「执行」分离。
@@ -568,6 +571,12 @@ final class FacadeSupport {
         List<String> args = new ArrayList<>();
 
         List<StreamInfo> videos = probe.videoStreams();
+        if (videos.isEmpty()) {
+            TaskWarningCollector.add(new FfmpegWarning(
+                    WarningCode.OPTIONAL_STREAM_MISSING,
+                    "源文件不含可选视频流，remux 将继续处理其他流",
+                    java.util.Map.of("streamType", "video")));
+        }
         for (int i = 0; i < videos.size(); i++) {
             mapped.add(input.video(i));
         }
@@ -577,6 +586,12 @@ final class FacadeSupport {
         }
 
         List<StreamInfo> audios = probe.audioStreams();
+        if (audios.isEmpty()) {
+            TaskWarningCollector.add(new FfmpegWarning(
+                    WarningCode.OPTIONAL_STREAM_MISSING,
+                    "源文件不含可选音频流，remux 将继续处理其他流",
+                    java.util.Map.of("streamType", "audio")));
+        }
         for (int i = 0; i < audios.size(); i++) {
             mapped.add(input.audio(i));
         }
@@ -594,6 +609,13 @@ final class FacadeSupport {
                     mapped.add(input.subtitle(i));
                     anySubMapped = true;
                 } else {
+                    TaskWarningCollector.add(new FfmpegWarning(
+                            WarningCode.SUBTITLE_DROPPED,
+                            "目标容器无法容纳图形字幕，已丢弃该字幕流",
+                            java.util.Map.of(
+                                    "streamIndex", Integer.toString(s.index()),
+                                    "codec", String.valueOf(s.codecName()),
+                                    "container", family.name())));
                     // 图形字幕（PGS/DVD/DVB）无法进 mp4：不映射并记录说明。
                     LOG.info("remux 目标为 mp4/mov，丢弃无法容纳的图形字幕流 #" + s.index()
                             + "（编解码器 " + s.codecName() + "）。");
