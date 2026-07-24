@@ -1,6 +1,6 @@
 # ffmpeg4j 使用说明
 
-一份从「装依赖」到「Spring Boot 集成」的完整上手指南。术语与示例均对齐当前实现（`1.5.0`，已发布至 Maven Central）。
+一份从「装依赖」到「Spring Boot 集成」的完整上手指南。术语与示例均对齐当前实现（`1.6.0`，已发布至 Maven Central）。
 
 > 速览：普通 Java 项目引 **`ffmpeg4j-core`**，用静态门面 `Ffmpeg.xxx(...)` 一行式完成常见任务；
 > Spring Boot 项目引 **`ffmpeg4j-spring-boot-starter`**，注入 `FfmpegClient` bean、配置走 `application.yml`。
@@ -58,7 +58,7 @@ ffprobe -version
 
 ## 3. 安装
 
-已发布到 **Maven Central**（groupId `io.github.pandong2015`），**无需额外仓库配置**。当前版本 **`1.5.0`**。
+已发布到 **Maven Central**（groupId `io.github.pandong2015`），**无需额外仓库配置**。当前版本 **`1.6.0`**。
 
 ### 普通 Java 项目
 
@@ -67,13 +67,13 @@ ffprobe -version
 <dependency>
     <groupId>io.github.pandong2015</groupId>
     <artifactId>ffmpeg4j-core</artifactId>
-    <version>1.5.0</version>
+    <version>1.6.0</version>
 </dependency>
 ```
 
 **Gradle**（Kotlin DSL）
 ```kotlin
-implementation("io.github.pandong2015:ffmpeg4j-core:1.5.0")
+implementation("io.github.pandong2015:ffmpeg4j-core:1.6.0")
 ```
 
 ### Spring Boot 项目
@@ -83,13 +83,13 @@ implementation("io.github.pandong2015:ffmpeg4j-core:1.5.0")
 <dependency>
     <groupId>io.github.pandong2015</groupId>
     <artifactId>ffmpeg4j-spring-boot-starter</artifactId>
-    <version>1.5.0</version>
+    <version>1.6.0</version>
 </dependency>
 ```
 
 **Gradle**（Kotlin DSL）
 ```kotlin
-implementation("io.github.pandong2015:ffmpeg4j-spring-boot-starter:1.5.0")
+implementation("io.github.pandong2015:ffmpeg4j-spring-boot-starter:1.6.0")
 ```
 
 > starter 传递引入 `ffmpeg4j-core`，无需再单独声明。可观测依赖（actuator/micrometer）为可选，见 [§13](#13-spring-boot-集成)。
@@ -633,7 +633,7 @@ Spring Boot 下改用 `ffmpeg4j.ffmpeg-path` / `ffmpeg4j.ffprobe-path`（见 [§
 1. **pipe 输入无法优雅取消**：stdin 被输入媒体占用，写不进 `q`，取消降级为 SIGTERM。各门面均写盘（stdin 空闲，优雅取消可用）。
 2. **进度回调默认在 pump 线程同步触发，必须非阻塞**——重活用 `callbackExecutor`。
 3. **版本 <4.2 仅告警不硬失败**；仅二进制缺失才硬错。
-4. **当前范围**（截至 1.5.0）：HLS VOD 已支持（`hlsSegment` 单码率 / `hlsAbr` ABR 多码率梯，均含可选 AES-128）；暂不含帧进出 JVM、硬件加速一等支持、DASH/LL-HLS、字幕高级样式——这些靠逃生舱兜底。
+4. **当前范围**（截至 1.6.0）：HLS VOD 已支持（`hlsSegment` 单码率 / `hlsAbr` ABR 多码率梯，均含可选 AES-128）；暂不含帧进出 JVM、硬件加速一等支持、DASH/LL-HLS、字幕高级样式——这些靠逃生舱兜底。
 5. **构建 / 覆盖率**：库在任意 JDK ≥17 上可运行；生成 JaCoCo 覆盖率报告需用 **JDK 17 或 21**（JaCoCo 0.8.12 不支持 JDK ≥23 插桩）。
 
 ---
